@@ -10,32 +10,34 @@ describe("grow_space", () => {
 
   const program = anchor.workspace.GrowSpace as Program<GrowSpace>;
 
-  it("Creates a PDA with initial values", async () => {
-    const [pda, bump] = await anchor.web3.PublicKey.findProgramAddress(
+  let pda: anchor.web3.PublicKey;
+
+  it("Initializes the PDA", async () => {
+    [pda] = await anchor.web3.PublicKey.findProgramAddress(
       [Buffer.from("pda_account")],
       program.programId
     );
 
-    await program.methods.createPda([new anchor.BN(1), new anchor.BN(2), new anchor.BN(3)])
-      .accounts({
+    console.log("Initialized PDA account public key:", pda.toString());
+
+    await program.methods.initializePda().accounts({
         pdaAccount: pda,
         payer: provider.wallet.publicKey,
         systemProgram: anchor.web3.SystemProgram.programId,
       })
-      .signers([provider.wallet.payer])
+      .signers([provider.wallet.payer]) // Explicitly include the default wallet as a signer
       .rpc();
 
+    console.log("Initialized PDA account public key:", pda.toString());
+  });
+
+  it("Initializes the PDA with an empty vector", async () => {
     const account = await program.account.pdaAccount.fetch(pda);
-    assert.deepEqual(account.values.map((v: any) => v.toNumber()), [1, 2, 3]);
+    assert.deepEqual(account.values, []);
   });
 
   it("Appends values to the PDA and reallocates if necessary", async () => {
-    const [pda, bump] = await anchor.web3.PublicKey.findProgramAddress(
-      [Buffer.from("pda_account")],
-      program.programId
-    );
-
-    for (let i = 4; i <= 15; i++) {
+    for (let i = 1; i <= 15; i++) {
       await program.methods.appendValue(new anchor.BN(i))
         .accounts({
           pdaAccount: pda,
