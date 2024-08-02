@@ -41,18 +41,37 @@ describe("grow_space", () => {
     assert.deepEqual(account.values, []);
   });
 
-  it("Appends values to the PDA and reallocates if necessary", async () => {
-    for (let i = 1; i <= 300; i++) {
-	    console.log("Loop: " + i);
-      await program.methods.appendValue(new anchor.BN(i))
+  it("Appends random Pubkeys to the PDA and reallocates if necessary", async () => {
+    const pubkeys = new Set();
+
+    for (let i = 1; i <= 75; i++) {
+      const randomPubkey = anchor.web3.Keypair.generate().publicKey;
+      console.log("Loop: " + i + ", Pubkey: " + randomPubkey.toString());
+
+      await program.methods.appendPubkey(randomPubkey)
         .accounts({
           pdaAccount: pda,
+          payer: provider.wallet.publicKey,
+          systemProgram: anchor.web3.SystemProgram.programId,
         })
+        .signers([provider.wallet.payer])
         .rpc();
+
+      pubkeys.add(randomPubkey.toString());
     }
 
     const account = await program.account.pdaAccount.fetch(pda);
-    assert.deepEqual(account.values.map((v: any) => v.toNumber()), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+
+    // Print and count the Pubkeys
+    console.log("Pubkeys stored in the PDA:");
+    account.values.forEach((pubkey: anchor.web3.PublicKey, index: number) => {
+      console.log(`Index ${index}: ${pubkey.toString()}`);
+    });
+
+    // Verify that the values are unique Pubkeys
+    const pubkeysSet = new Set(account.values.map((v: any) => v.toString()));
+    assert.equal(pubkeysSet.size, account.values.length, "Pubkeys should be unique");
+    console.log("Total unique pubkeys added: ", account.values.length);
   });
 });
 

@@ -16,34 +16,41 @@ pub mod grow_space {
         Ok(())
     }
 
-    pub fn append_value(ctx: Context<AppendValue>, value: u64) -> Result<()> {
+    pub fn append_pubkey(ctx: Context<AppendPubkey>, new_pubkey: Pubkey) -> Result<()> {
         let pda_account = &mut ctx.accounts.pda_account;
         let payer = &mut ctx.accounts.payer;
 
+        // Check if the pubkey is already in the vector
+        if pda_account.values.contains(&new_pubkey) {
+            return Ok(());
+        }
+
         // Calculate new length in bytes
-        let new_len = (pda_account.values.len() + 1) * 8 + 16; // u64 is 8 bytes when len is zero, pad with 16
+        let new_len = (pda_account.values.len() + 1) * 32 + 16; // Pubkey is 32 bytes, add 16 bytes padding
         msg!("pda_account.to_account_info().data_len() {}", pda_account.to_account_info().data_len());
         msg!("new_len {}", new_len);
 
         // Reallocate if needed
         if pda_account.to_account_info().data_len() < new_len {
             let rent = Rent::get()?;
-            let new_size = 8 + 256 + new_len; // pad with bytes
+            let new_size = 8 + 256 + new_len; // Add 256 bytes padding
             let current_balance = **pda_account.to_account_info().lamports.borrow();
             let lamports_needed = rent.minimum_balance(new_size).saturating_sub(current_balance);
             msg!("Lamports needed for new size: {}", lamports_needed);
 
+            if lamports_needed > 0 {
                 transfer_lamports(
                     &payer.to_account_info(),
                     &pda_account.to_account_info(),
                     &ctx.accounts.system_program.to_account_info(),
                     lamports_needed,
                 )?;
+            }
 
-            pda_account.to_account_info().realloc(new_len + 256, false)?;
+            pda_account.to_account_info().realloc(new_size, false)?;
         }
 
-        pda_account.values.push(value);
+        pda_account.values.push(new_pubkey);
         Ok(())
     }
 }
@@ -74,7 +81,7 @@ pub fn transfer_lamports<'info>(
 #[derive(Accounts)]
 #[instruction(unique_id: u64)]
 pub struct InitializePDA<'info> {
-    #[account(init, seeds = [b"pda_account", payer.key.as_ref(), &unique_id.to_le_bytes()], bump, payer = payer, space = 8 + 8 * 2)] // 8 bytes for discriminator + initial space for 10 u64 values
+    #[account(init, seeds = [b"pda_account", payer.key.as_ref(), &unique_id.to_le_bytes()], bump, payer = payer, space = 8 + 32 * 2)] // 8 bytes for discriminator + initial space for 2 Pubkey values
     pub pda_account: Account<'info, PDAAccount>,
     #[account(mut)]
     pub payer: Signer<'info>,
@@ -82,7 +89,7 @@ pub struct InitializePDA<'info> {
 }
 
 #[derive(Accounts)]
-pub struct AppendValue<'info> {
+pub struct AppendPubkey<'info> {
     #[account(mut)]
     pub pda_account: Account<'info, PDAAccount>,
     #[account(mut)]
@@ -92,6 +99,6 @@ pub struct AppendValue<'info> {
 
 #[account]
 pub struct PDAAccount {
-    pub values: Vec<u64>,
+    pub values: Vec<Pubkey>,
 }
 
