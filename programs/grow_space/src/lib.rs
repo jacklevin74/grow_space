@@ -8,11 +8,9 @@ declare_id!("7KvbAAK7kP72zcdC24vDn9L51TDV8v9he4hNJ3S7ZU51");
 pub mod grow_space {
     use super::*;
 
-    pub fn initialize_pda(ctx: Context<InitializePDA>, unique_id: u64) -> Result<()> {
+    pub fn initialize_pda(ctx: Context<InitializePDA>, _unique_id: u64) -> Result<()> {
         let pda_account = &mut ctx.accounts.pda_account;
-
-        // Initialize the account with an empty vector
-        pda_account.values = Vec::new();
+        pda_account.entries = Vec::new();
         Ok(())
     }
 
@@ -20,20 +18,17 @@ pub mod grow_space {
         let pda_account = &mut ctx.accounts.pda_account;
         let payer = &mut ctx.accounts.payer;
 
-        // Check if the pubkey is already in the vector
-        if pda_account.values.contains(&new_pubkey) {
+        if pda_account.entries.iter().any(|entry| entry.pubkey == new_pubkey) {
             return Ok(());
         }
 
-        // Calculate new length in bytes
-        let new_len = (pda_account.values.len() + 1) * 32 + 16; // Pubkey is 32 bytes, add 16 bytes padding
+        let new_len = (pda_account.entries.len() + 1) * 32 + 32;
         msg!("pda_account.to_account_info().data_len() {}", pda_account.to_account_info().data_len());
         msg!("new_len {}", new_len);
 
-        // Reallocate if needed
         if pda_account.to_account_info().data_len() < new_len {
             let rent = Rent::get()?;
-            let new_size = 8 + 256 + new_len; // Add 256 bytes padding
+            let new_size = 8 + 256 + new_len;
             let current_balance = **pda_account.to_account_info().lamports.borrow();
             let lamports_needed = rent.minimum_balance(new_size).saturating_sub(current_balance);
             msg!("Lamports needed for new size: {}", lamports_needed);
@@ -47,10 +42,47 @@ pub mod grow_space {
                 )?;
             }
 
-            pda_account.to_account_info().realloc(new_size, false)?;
+            pda_account.to_account_info().realloc(new_len + 256, false)?;
         }
 
-        pda_account.values.push(new_pubkey);
+        pda_account.entries.push(PubkeyEntry { pubkey: new_pubkey });
+        Ok(())
+    }
+
+    pub fn initialize_pubkey_values(ctx: Context<InitializePubkeyValues>, _pubkey: Pubkey) -> Result<()> {
+        let pubkey_values_account = &mut ctx.accounts.pubkey_values_account;
+        pubkey_values_account.values = Vec::new();
+        Ok(())
+    }
+
+    pub fn append_value(ctx: Context<AppendValue>, _pubkey: Pubkey, value: u64) -> Result<()> {
+        let pubkey_values_account = &mut ctx.accounts.pubkey_values_account;
+
+        let new_len = (pubkey_values_account.values.len() + 1) * 8 + 16;
+        let current_len = pubkey_values_account.values.len() * 8;
+        msg!("pubkey_values_account.values.len() {}", pubkey_values_account.values.len());
+        msg!("new_len {}", new_len);
+
+        if current_len < new_len {
+            let rent = Rent::get()?;
+            let new_size = current_len + 8 + new_len;
+            let current_balance = **pubkey_values_account.to_account_info().lamports.borrow();
+            let lamports_needed = rent.minimum_balance(new_size).saturating_sub(current_balance);
+            msg!("Lamports needed for new size: {}", lamports_needed);
+
+            if lamports_needed > 0 {
+                transfer_lamports(
+                    &ctx.accounts.payer.to_account_info(),
+                    &pubkey_values_account.to_account_info(),
+                    &ctx.accounts.system_program.to_account_info(),
+                    lamports_needed,
+                )?;
+            }
+
+            pubkey_values_account.to_account_info().realloc(new_size, false)?;
+        }
+
+        pubkey_values_account.values.push(value);
         Ok(())
     }
 }
@@ -78,10 +110,15 @@ pub fn transfer_lamports<'info>(
     Ok(())
 }
 
+#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
+pub struct PubkeyEntry {
+    pub pubkey: Pubkey,
+}
+
 #[derive(Accounts)]
 #[instruction(unique_id: u64)]
 pub struct InitializePDA<'info> {
-    #[account(init, seeds = [b"pda_account", payer.key.as_ref(), &unique_id.to_le_bytes()], bump, payer = payer, space = 8 + 32 * 2)] // 8 bytes for discriminator + initial space for 2 Pubkey values
+    #[account(init, seeds = [b"pda_account", payer.key.as_ref(), &unique_id.to_le_bytes()], bump, payer = payer, space = 8 + 32 * 2)]
     pub pda_account: Account<'info, PDAAccount>,
     #[account(mut)]
     pub payer: Signer<'info>,
@@ -97,8 +134,33 @@ pub struct AppendPubkey<'info> {
     pub system_program: Program<'info, System>,
 }
 
+#[derive(Accounts)]
+#[instruction(pubkey: Pubkey)]
+pub struct InitializePubkeyValues<'info> {
+    #[account(init, seeds = [b"pubkey_values", pubkey.as_ref()], bump, payer = payer, space = 8 + 8 * 1)]
+    pub pubkey_values_account: Account<'info, PubkeyValues>,
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(pubkey: Pubkey)]
+pub struct AppendValue<'info> {
+    #[account(mut, seeds = [b"pubkey_values", pubkey.as_ref()], bump)]
+    pub pubkey_values_account: Account<'info, PubkeyValues>,
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
 #[account]
 pub struct PDAAccount {
-    pub values: Vec<Pubkey>,
+    pub entries: Vec<PubkeyEntry>,
+}
+
+#[account]
+pub struct PubkeyValues {
+    pub values: Vec<u64>,
 }
 
