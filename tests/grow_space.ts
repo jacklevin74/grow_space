@@ -39,13 +39,13 @@ describe("grow_space_combined", () => {
   it("Appends multiple final hashes, including repeats, to random block IDs in the PDA", async () => {
     const blockIds = new Set();
 
-    for (let i = 1; i <= 5; i++) {
+    for (let i = 1; i <= 20; i++) {
       const randomBlockId = Math.floor(Math.random() * 100000);
       console.log("Loop: " + i + ", Block ID: " + randomBlockId);
 
       // Append repeating final hashes
       const repeatingHashes = [`hash_${randomBlockId}_r1`, `hash_${randomBlockId}_r2`, `hash_${randomBlockId}_r3`];
-      for (let j = 1; j <= 3; j++) {
+      for (let j = 1; j <= 30; j++) {
         for (const repeatingHash of repeatingHashes) {
           console.log("  Appending Repeating Final Hash: " + repeatingHash);
 
@@ -64,7 +64,7 @@ describe("grow_space_combined", () => {
       }
 
       // Append unique final hashes
-      for (let k = 1; k <= 2; k++) {
+      for (let k = 1; k <= 20; k++) {
         const uniqueHash = `hash_${randomBlockId}_unique${k}`;
         console.log("  Appending Unique Final Hash: " + uniqueHash);
 
