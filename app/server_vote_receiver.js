@@ -1,10 +1,8 @@
 const express = require('express');
 const bodyParser = require('body-parser');
 const anchor = require('@coral-xyz/anchor');
-const { Keypair, PublicKey, Connection, clusterApiUrl } = require('@solana/web3.js');
+const { PublicKey } = require('@solana/web3.js');
 const { Program } = require('@coral-xyz/anchor');
-const { GrowSpace } = require('../target/types/grow_space.js');
-const { assert } = require('chai');
 const { BN } = require('bn.js');
 
 const app = express();
@@ -93,7 +91,7 @@ app.get('/fetch_data/:block_id', async (req, res) => {
       entries: account.blockIds.map(entry => ({
         blockId: entry.blockId.toString(),
         finalHashes: entry.finalHashes.map(hashEntry => ({
-          finalHash: String.fromCharCode(...hashEntry.finalHash),  // Convert finalHash bytes to string
+          finalHash: Buffer.from(hashEntry.finalHash).toString('utf8'),  // Convert finalHash bytes to string
           count: parseInt(hashEntry.count, 10),
           pubkeys: hashEntry.pubkeys.map(pubkey => pubkey.toString())
         }))

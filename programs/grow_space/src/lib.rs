@@ -83,9 +83,9 @@ pub mod grow_space {
 
         // Check if the data size exceeds 80% of the allocated space
         let data_len = pda_account.to_account_info().data_len();
-        if current_data_after > (data_len as usize) * 80 / 100 {
+        if current_data_after > (data_len as usize) * 90 / 100 {
             let rent = Rent::get()?;
-            let new_size = data_len * 2 ; // double space exponentially
+            let new_size = data_len + data_len / 3 ; // add 30% space space 
             let lamports_needed = rent.minimum_balance(new_size as usize).saturating_sub(pda_account.to_account_info().lamports());
 
             if lamports_needed > 0 {
