@@ -21,8 +21,12 @@ async function pdaExists(pda) {
 }
 
 // Endpoint to append data and initialize PDA if needed
-app.post('/append_data', async (req, res) => {
-  const { block_id, final_hash, pubkey } = req.body;
+app.post('/', async (req, res) => {
+  const { first_block_id, final_hash, pubkey } = req.body;
+  console.log(req.body);
+  const block_id = first_block_id;
+  console.log(block_id + " " + pubkey + "\n");
+
   const uniqueId = new BN(block_id);
   const pubkeyObj = new PublicKey(pubkey);
 
@@ -69,6 +73,10 @@ app.post('/append_data', async (req, res) => {
 // Endpoint to fetch and display data
 app.get('/fetch_data/:block_id', async (req, res) => {
   const block_id = parseInt(req.params.block_id);
+  if (isNaN(block_id)) {
+    return res.status(400).json({ error: "Invalid block_id" });
+  }
+
   const uniqueId = new BN(block_id);
 
   const [pda] = await PublicKey.findProgramAddress(
@@ -77,6 +85,7 @@ app.get('/fetch_data/:block_id', async (req, res) => {
   );
 
   try {
+    console.log(`Fetching data for block_id: ${block_id}, PDA: ${pda.toString()}`);
     const account = await program.account.pdaAccount.fetch(pda);
 
     const blockInfo = {
@@ -84,8 +93,8 @@ app.get('/fetch_data/:block_id', async (req, res) => {
       entries: account.blockIds.map(entry => ({
         blockId: entry.blockId.toString(),
         finalHashes: entry.finalHashes.map(hashEntry => ({
-          finalHash: hashEntry.finalHash,
-	  count: parseInt(hashEntry.count, 10),
+          finalHash: String.fromCharCode(...hashEntry.finalHash),  // Convert finalHash bytes to string
+          count: parseInt(hashEntry.count, 10),
           pubkeys: hashEntry.pubkeys.map(pubkey => pubkey.toString())
         }))
       }))
@@ -97,7 +106,7 @@ app.get('/fetch_data/:block_id', async (req, res) => {
   }
 });
 
-const PORT = 5555;
+const PORT = 4444;
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });

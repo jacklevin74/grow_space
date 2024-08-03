@@ -22,6 +22,21 @@ pub mod grow_space {
         let current_data_before = pda_account.data_size;
         msg!("Data size before in bytes: {}", current_data_before);
         msg!("Current data length allocation: {}", pda_account.to_account_info().data_len());
+        msg!("block_id: {}", block_id);
+
+        // Convert the final_hash string to bytes and truncate to 64 bits (8 bytes)
+        let final_hash_bytes: [u8; 8] = {
+            let mut bytes = final_hash.as_bytes().to_vec();
+            bytes.resize(8, 0); // Ensure it has at least 8 bytes
+            bytes[..8].try_into().expect("slice with incorrect length")
+        };
+
+        // Convert truncated bytes back to string for logging
+        let final_hash_truncated_str = String::from_utf8_lossy(&final_hash_bytes);
+
+        // Log the incoming final_hash string and its truncated byte representation
+        msg!("Incoming final_hash string: {}", final_hash);
+        msg!("Truncated final_hash bytes as string: {}", final_hash_truncated_str);
 
         let mut found = false;
         for block_entry in &mut pda_account.block_ids {
@@ -29,7 +44,7 @@ pub mod grow_space {
                 found = true;
                 let mut hash_found = false;
                 for hash_entry in &mut block_entry.final_hashes {
-                    if hash_entry.final_hash == final_hash {
+                    if hash_entry.final_hash == final_hash_bytes {
                         if !hash_entry.pubkeys.contains(&pubkey) {
                             hash_entry.pubkeys.push(pubkey);
                             hash_entry.count = hash_entry.pubkeys.len() as u64; // Set count to the number of unique pubkeys
@@ -40,7 +55,7 @@ pub mod grow_space {
                 }
                 if !hash_found {
                     block_entry.final_hashes.push(FinalHashEntry {
-                        final_hash: final_hash.clone(),
+                        final_hash: final_hash_bytes,
                         pubkeys: vec![pubkey],
                         count: 1,
                     });
@@ -53,7 +68,7 @@ pub mod grow_space {
             pda_account.block_ids.push(BlockEntry {
                 block_id,
                 final_hashes: vec![FinalHashEntry {
-                    final_hash,
+                    final_hash: final_hash_bytes,
                     pubkeys: vec![pubkey],
                     count: 1,
                 }],
@@ -70,7 +85,7 @@ pub mod grow_space {
         let data_len = pda_account.to_account_info().data_len();
         if current_data_after > (data_len as usize) * 80 / 100 {
             let rent = Rent::get()?;
-            let new_size = data_len + 4000; // Add at least 4000 bytes
+            let new_size = data_len * 2 ; // double space exponentially
             let lamports_needed = rent.minimum_balance(new_size as usize).saturating_sub(pda_account.to_account_info().lamports());
 
             if lamports_needed > 0 {
@@ -107,7 +122,7 @@ fn calculate_data_size(entries: &Vec<BlockEntry>) -> usize {
         total_size += 8;
         // Size of each FinalHashEntry in final_hashes
         for hash_entry in &entry.final_hashes {
-            total_size += 32 + 8; // Assuming 32 bytes for final_hash and 8 bytes for count
+            total_size += 8 + 8; // Assuming 8 bytes for final_hash and 8 bytes for count
             total_size += hash_entry.pubkeys.len() * 32; // Each Pubkey is 32 bytes
         }
     }
@@ -122,7 +137,7 @@ pub struct BlockEntry {
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct FinalHashEntry {
-    pub final_hash: String,
+    pub final_hash: [u8; 8],
     pub pubkeys: Vec<Pubkey>,
     pub count: u64,
 }
@@ -130,7 +145,7 @@ pub struct FinalHashEntry {
 #[derive(Accounts)]
 #[instruction(unique_id: u64)]
 pub struct InitializePDA<'info> {
-    #[account(init, seeds = [b"pda_account",  unique_id.to_le_bytes().as_ref()], bump, payer = payer, space = 8 + 5 * (8 + 5 * (32 + 8 + 3 * 10)))]
+    #[account(init, seeds = [b"pda_account",  unique_id.to_le_bytes().as_ref()], bump, payer = payer, space = 8 + 5 * (8 + 5 * (8 + 8 + 3 * 10)))]
     pub pda_account: Account<'info, PDAAccount>,
     #[account(mut)]
     pub payer: Signer<'info>,
