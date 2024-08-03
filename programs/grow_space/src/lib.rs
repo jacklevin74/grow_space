@@ -32,7 +32,7 @@ pub mod grow_space {
                     if hash_entry.final_hash == final_hash {
                         if !hash_entry.pubkeys.contains(&pubkey) {
                             hash_entry.pubkeys.push(pubkey);
-                            hash_entry.count += 1; // Increment count only when a new pubkey is added
+                            hash_entry.count = hash_entry.pubkeys.len() as u64; // Set count to the number of unique pubkeys
                         }
                         hash_found = true;
                         break;
@@ -60,10 +60,9 @@ pub mod grow_space {
             });
         }
 
-        // Log the new length and current data size after modification
-        let new_len = pda_account.block_ids.len();
+        // Log the new data size after modification
         let current_data_after = calculate_data_size(&pda_account.block_ids);
-        msg!("New length of pda_account.entries: {}", new_len);
+        msg!("New length of pda_account.entries: {}", pda_account.block_ids.len());
         msg!("Data size after in bytes: {}", current_data_after);
         msg!("Current data length allocation: {}", pda_account.to_account_info().data_len());
 
@@ -95,7 +94,7 @@ pub mod grow_space {
         }
 
         // Update data size in the PDA
-        pda_account.data_size = pda_account.data_size.saturating_add(current_data_after as u32 - current_data_before as u32);
+        pda_account.data_size = current_data_after as u32;
 
         Ok(())
     }
