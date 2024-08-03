@@ -43,11 +43,11 @@ describe("grow_space_combined", () => {
       const randomBlockId = Math.floor(Math.random() * 100000);
       console.log("Loop: " + i + ", Block ID: " + randomBlockId);
 
-      const pubkeys = Array.from({ length: 3 }, () => anchor.web3.Keypair.generate().publicKey);
+      const pubkeys = Array.from({ length: 30 }, () => anchor.web3.Keypair.generate().publicKey);
 
       // Append repeating final hashes with repeated pubkeys
       const repeatingHashes = [`hash_${randomBlockId}_r1`, `hash_${randomBlockId}_r2`, `hash_${randomBlockId}_r3`];
-      for (let j = 1; j <= 3; j++) { // Reduced to 3 for testing purposes
+      for (let j = 1; j <= 30; j++) { // Reduced to 3 for testing purposes
         for (const repeatingHash of repeatingHashes) {
           const pubkey = pubkeys[j % pubkeys.length];
           console.log("  Appending Repeating Final Hash: " + repeatingHash + ", Pubkey: " + pubkey.toString());
@@ -67,7 +67,7 @@ describe("grow_space_combined", () => {
       }
 
       // Append unique final hashes
-      for (let k = 1; k <= 2; k++) { // Reduced to 2 for testing purposes
+      for (let k = 1; k <= 3; k++) { // Reduced to 2 for testing purposes
         const uniqueHash = `hash_${randomBlockId}_unique${k}`;
         const pubkey = anchor.web3.Keypair.generate().publicKey;
         console.log("  Appending Unique Final Hash: " + uniqueHash + ", Pubkey: " + pubkey.toString());
