@@ -36,21 +36,22 @@ describe("grow_space_combined", () => {
     }
   });
 
-  it("Appends multiple final hashes, including repeats, to random block IDs in the PDA", async () => {
+  it("Appends multiple final hashes, including repeats, to random block IDs in the PDA with random pubkeys", async () => {
     const blockIds = new Set();
 
-    for (let i = 1; i <= 20; i++) {
+    for (let i = 1; i <= 10; i++) {
       const randomBlockId = Math.floor(Math.random() * 100000);
       console.log("Loop: " + i + ", Block ID: " + randomBlockId);
 
-      // Append repeating final hashes
+      // Append repeating final hashes with random pubkeys
       const repeatingHashes = [`hash_${randomBlockId}_r1`, `hash_${randomBlockId}_r2`, `hash_${randomBlockId}_r3`];
-      for (let j = 1; j <= 30; j++) {
+      for (let j = 1; j <= 3; j++) {
         for (const repeatingHash of repeatingHashes) {
-          console.log("  Appending Repeating Final Hash: " + repeatingHash);
+          const randomPubkey = anchor.web3.Keypair.generate().publicKey;
+          console.log("  Appending Repeating Final Hash: " + repeatingHash + ", Pubkey: " + randomPubkey.toString());
 
           try {
-            await program.methods.appendData(new BN(randomBlockId), repeatingHash).accounts({
+            await program.methods.appendData(new BN(randomBlockId), repeatingHash, randomPubkey).accounts({
                 pdaAccount: pda,
                 payer: provider.wallet.publicKey,
                 systemProgram: anchor.web3.SystemProgram.programId,
@@ -63,13 +64,14 @@ describe("grow_space_combined", () => {
         }
       }
 
-      // Append unique final hashes
-      for (let k = 1; k <= 20; k++) {
+      // Append unique final hashes with random pubkeys
+      for (let k = 1; k <= 10; k++) {
         const uniqueHash = `hash_${randomBlockId}_unique${k}`;
-        console.log("  Appending Unique Final Hash: " + uniqueHash);
+        const randomPubkey = anchor.web3.Keypair.generate().publicKey;
+        console.log("  Appending Unique Final Hash: " + uniqueHash + ", Pubkey: " + randomPubkey.toString());
 
         try {
-          await program.methods.appendData(new BN(randomBlockId), uniqueHash).accounts({
+          await program.methods.appendData(new BN(randomBlockId), uniqueHash, randomPubkey).accounts({
               pdaAccount: pda,
               payer: provider.wallet.publicKey,
               systemProgram: anchor.web3.SystemProgram.programId,
@@ -89,7 +91,11 @@ describe("grow_space_combined", () => {
     // Print and count the Block IDs
     console.log("Block IDs stored in the PDA:");
     account.blockIds.forEach((entry: any, index: number) => {
-      console.log(`Index ${index}: Block ID ${entry.blockId.toString()}, Final Hashes: ${entry.finalHashes.map((hashEntry: any) => `${hashEntry.finalHash} (count: ${hashEntry.count})`).join(", ")}`);
+      console.log(`Index ${index}: Block ID ${entry.blockId.toString()}`);
+      entry.finalHashes.forEach((hashEntry: any) => {
+        console.log(`  Final Hash: ${hashEntry.finalHash} (count: ${hashEntry.count}, pubkeys: ${hashEntry.pubkeys.length})`);
+        console.log(`    Pubkeys: ${hashEntry.pubkeys.map((pubkey: any) => pubkey.toString()).join(", ")}`);
+      });
     });
 
     // Verify that the values are unique Block IDs

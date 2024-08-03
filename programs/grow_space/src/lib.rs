@@ -14,7 +14,7 @@ pub mod grow_space {
         Ok(())
     }
 
-    pub fn append_data(ctx: Context<AppendData>, block_id: u64, final_hash: String) -> Result<()> {
+    pub fn append_data(ctx: Context<AppendData>, block_id: u64, final_hash: String, pubkey: Pubkey) -> Result<()> {
         let pda_account = &mut ctx.accounts.pda_account;
 
         // Log the old length and current data size before modification
@@ -29,10 +29,14 @@ pub mod grow_space {
             // If the block_id exists, update the final_hashes
             if let Some(hash_entry) = block_entry.final_hashes.iter_mut().find(|entry| entry.final_hash == final_hash) {
                 hash_entry.count += 1;
+                if !hash_entry.pubkeys.contains(&pubkey) {
+                    hash_entry.pubkeys.push(pubkey);
+                }
             } else {
                 // Add new final_hash if it doesn't exist
                 block_entry.final_hashes.push(FinalHashEntry {
                     final_hash,
+                    pubkeys: vec![pubkey],
                     count: 1,
                 });
             }
@@ -42,6 +46,7 @@ pub mod grow_space {
                 block_id,
                 final_hashes: vec![FinalHashEntry {
                     final_hash,
+                    pubkeys: vec![pubkey],
                     count: 1,
                 }],
             });
@@ -91,8 +96,9 @@ fn calculate_data_size(entries: &Vec<BlockEntry>) -> usize {
         // Size of block_id
         total_size += 8;
         // Size of each FinalHashEntry in final_hashes
-        for _hash_entry in &entry.final_hashes {
+        for hash_entry in &entry.final_hashes {
             total_size += 32 + 8; // Assuming 32 bytes for final_hash and 8 bytes for count
+            total_size += hash_entry.pubkeys.len() * 32; // Each Pubkey is 32 bytes
         }
     }
     total_size
@@ -107,13 +113,14 @@ pub struct BlockEntry {
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct FinalHashEntry {
     pub final_hash: String,
+    pub pubkeys: Vec<Pubkey>,
     pub count: u64,
 }
 
 #[derive(Accounts)]
 #[instruction(unique_id: u64)]
 pub struct InitializePDA<'info> {
-    #[account(init, seeds = [b"pda_account", payer.key.as_ref(), &unique_id.to_le_bytes()], bump, payer = payer, space = 8 + 10 * (8 + 10 * (32 + 8)))]
+    #[account(init, seeds = [b"pda_account", payer.key.as_ref(), &unique_id.to_le_bytes()], bump, payer = payer, space = 8 + 5 * (8 + 5 * (32 + 8 + 3 * 10)))]
     pub pda_account: Account<'info, PDAAccount>,
     #[account(mut)]
     pub payer: Signer<'info>,
