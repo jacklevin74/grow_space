@@ -21,10 +21,10 @@ describe("grow_space_combined", () => {
 
       let pda: anchor.web3.PublicKey;
       let bump: number;
-      
+
       // Initialize a new PDA for each block ID
       [pda, bump] = await anchor.web3.PublicKey.findProgramAddress(
-        [Buffer.from("pda_account"), provider.wallet.publicKey.toBuffer(), uniqueId.toArrayLike(Buffer, "le", 8)],
+        [Buffer.from("pda_account"), uniqueId.toArrayLike(Buffer, "le", 8)],
         program.programId
       );
 
@@ -90,7 +90,7 @@ describe("grow_space_combined", () => {
     for (const blockId of blockIds) {
       const uniqueId = new BN(parseInt(blockId));
       const [pda] = await anchor.web3.PublicKey.findProgramAddress(
-        [Buffer.from("pda_account"), provider.wallet.publicKey.toBuffer(), uniqueId.toArrayLike(Buffer, "le", 8)],
+        [Buffer.from("pda_account"), uniqueId.toArrayLike(Buffer, "le", 8)],
         program.programId
       );
 

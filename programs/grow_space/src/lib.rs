@@ -18,10 +18,8 @@ pub mod grow_space {
     pub fn append_data(ctx: Context<AppendData>, block_id: u64, final_hash: String, pubkey: Pubkey) -> Result<()> {
         let pda_account = &mut ctx.accounts.pda_account;
 
-        // Log the old length and current data size before modification
-        let old_len = pda_account.block_ids.len();
-        let current_data_before = calculate_data_size(&pda_account.block_ids);
-        msg!("Old length of pda_account.entries: {}", old_len);
+        // Log the current data size before modification
+        let current_data_before = pda_account.data_size;
         msg!("Data size before in bytes: {}", current_data_before);
         msg!("Current data length allocation: {}", pda_account.to_account_info().data_len());
 
@@ -32,9 +30,9 @@ pub mod grow_space {
                 let mut hash_found = false;
                 for hash_entry in &mut block_entry.final_hashes {
                     if hash_entry.final_hash == final_hash {
-                        hash_entry.count += 1;
                         if !hash_entry.pubkeys.contains(&pubkey) {
                             hash_entry.pubkeys.push(pubkey);
+                            hash_entry.count += 1; // Increment count only when a new pubkey is added
                         }
                         hash_found = true;
                         break;
@@ -133,7 +131,7 @@ pub struct FinalHashEntry {
 #[derive(Accounts)]
 #[instruction(unique_id: u64)]
 pub struct InitializePDA<'info> {
-    #[account(init, seeds = [b"pda_account", payer.key.as_ref(), &unique_id.to_le_bytes()], bump, payer = payer, space = 8 + 5 * (8 + 5 * (32 + 8 + 3 * 10)))]
+    #[account(init, seeds = [b"pda_account",  unique_id.to_le_bytes().as_ref()], bump, payer = payer, space = 8 + 5 * (8 + 5 * (32 + 8 + 3 * 10)))]
     pub pda_account: Account<'info, PDAAccount>,
     #[account(mut)]
     pub payer: Signer<'info>,
