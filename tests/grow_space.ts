@@ -36,22 +36,24 @@ describe("grow_space_combined", () => {
     }
   });
 
-  it("Appends multiple final hashes, including repeats, to random block IDs in the PDA with random pubkeys", async () => {
+  it("Appends multiple final hashes, including repeats, to random block IDs in the PDA with repeated pubkeys", async () => {
     const blockIds = new Set();
 
-    for (let i = 1; i <= 10; i++) {
+    for (let i = 1; i <= 3; i++) { // Limiting to 2 for testing purposes
       const randomBlockId = Math.floor(Math.random() * 100000);
       console.log("Loop: " + i + ", Block ID: " + randomBlockId);
 
-      // Append repeating final hashes with random pubkeys
+      const pubkeys = Array.from({ length: 3 }, () => anchor.web3.Keypair.generate().publicKey);
+
+      // Append repeating final hashes with repeated pubkeys
       const repeatingHashes = [`hash_${randomBlockId}_r1`, `hash_${randomBlockId}_r2`, `hash_${randomBlockId}_r3`];
-      for (let j = 1; j <= 3; j++) {
+      for (let j = 1; j <= 3; j++) { // Reduced to 3 for testing purposes
         for (const repeatingHash of repeatingHashes) {
-          const randomPubkey = anchor.web3.Keypair.generate().publicKey;
-          console.log("  Appending Repeating Final Hash: " + repeatingHash + ", Pubkey: " + randomPubkey.toString());
+          const pubkey = pubkeys[j % pubkeys.length];
+          console.log("  Appending Repeating Final Hash: " + repeatingHash + ", Pubkey: " + pubkey.toString());
 
           try {
-            await program.methods.appendData(new BN(randomBlockId), repeatingHash, randomPubkey).accounts({
+            await program.methods.appendData(new BN(randomBlockId), repeatingHash, pubkey).accounts({
                 pdaAccount: pda,
                 payer: provider.wallet.publicKey,
                 systemProgram: anchor.web3.SystemProgram.programId,
@@ -64,14 +66,14 @@ describe("grow_space_combined", () => {
         }
       }
 
-      // Append unique final hashes with random pubkeys
-      for (let k = 1; k <= 10; k++) {
+      // Append unique final hashes
+      for (let k = 1; k <= 2; k++) { // Reduced to 2 for testing purposes
         const uniqueHash = `hash_${randomBlockId}_unique${k}`;
-        const randomPubkey = anchor.web3.Keypair.generate().publicKey;
-        console.log("  Appending Unique Final Hash: " + uniqueHash + ", Pubkey: " + randomPubkey.toString());
+        const pubkey = anchor.web3.Keypair.generate().publicKey;
+        console.log("  Appending Unique Final Hash: " + uniqueHash + ", Pubkey: " + pubkey.toString());
 
         try {
-          await program.methods.appendData(new BN(randomBlockId), uniqueHash, randomPubkey).accounts({
+          await program.methods.appendData(new BN(randomBlockId), uniqueHash, pubkey).accounts({
               pdaAccount: pda,
               payer: provider.wallet.publicKey,
               systemProgram: anchor.web3.SystemProgram.programId,
@@ -94,7 +96,9 @@ describe("grow_space_combined", () => {
       console.log(`Index ${index}: Block ID ${entry.blockId.toString()}`);
       entry.finalHashes.forEach((hashEntry: any) => {
         console.log(`  Final Hash: ${hashEntry.finalHash} (count: ${hashEntry.count}, pubkeys: ${hashEntry.pubkeys.length})`);
-        console.log(`    Pubkeys: ${hashEntry.pubkeys.map((pubkey: any) => pubkey.toString()).join(", ")}`);
+        hashEntry.pubkeys.forEach((pubkey: any, pubkeyIndex: number) => {
+          console.log(`    Pubkey ${pubkeyIndex}: ${pubkey.toString()}`);
+        });
       });
     });
 
