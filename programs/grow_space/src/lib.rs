@@ -21,30 +21,51 @@ pub mod grow_space {
         pubkey_count_account.pubkey_counts = Vec::new();
         Ok(())
     }
-pub fn aggregate_pubkey_counts(ctx: Context<CountReference>, start_block_id: u64) -> Result<()> {
+
+pub fn aggregate_pubkey_counts(ctx: Context<CountReference_2>, start_block_id: u64) -> Result<()> {
     let (pda, _bump) = Pubkey::find_program_address(&[b"pda_account", &start_block_id.to_le_bytes()], ctx.program_id);
     msg!("PDA Account for block ID {}: {}", start_block_id, pda);
 
-    let (count_pda_key, _bump) = Pubkey::find_program_address(&[b"pubkey_count", &start_block_id.to_le_bytes()], ctx.program_id);
-
     // Load the PDA account
     let pda_account = &ctx.accounts.pda_account;
-    let mut counter = 0;
+
+    // Pre-allocate vector capacity
+    let estimated_size = 10; // Adjust based on your estimates
+    let mut pubkey_counts: Vec<(Pubkey, u64)> = Vec::with_capacity(estimated_size);
+
+    // Use a HashMap to efficiently count unique pubkeys
+    let mut pubkey_counter: std::collections::HashMap<Pubkey, u64> = std::collections::HashMap::new();
+
+    // Set the maximum number of iterations
+    let mut iteration_count = 0;
+    let max_iterations = 5;
 
     // Iterate through block entries and their final_hashes to collect pubkeys
     for block_entry in &pda_account.block_ids {
         for final_hash_entry in &block_entry.final_hashes {
             for pubkey in &final_hash_entry.pubkeys {
-                counter += 1;
+                // Efficiently count pubkeys
+                let counter = pubkey_counter.entry(*pubkey).or_insert(0);
+                *counter += 1;
             }
+            iteration_count += 1;
+            if iteration_count >= max_iterations {
+                break;
+            }
+        }
+        if iteration_count >= max_iterations {
+            break;
         }
     }
 
-    msg!("Unique pubkey count: {}", counter);
+    // Convert HashMap to vector for storage
+    pubkey_counts.extend(pubkey_counter.into_iter());
+
+    msg!("Unique pubkey counts: {:?}", pubkey_counts);
 
     // Load the CountAccount associated with count_pda_key
     let count_account = &mut ctx.accounts.count_account;
-    count_account.count = counter;
+    count_account.pubkey_counts = pubkey_counts;
 
     Ok(())
 }
@@ -226,14 +247,25 @@ pub struct AppendData<'info> {
     pub system_program: Program<'info, System>,
 }
 
+#[derive(Accounts)]
+#[instruction(start_block_id: u64)]
+pub struct CountReference_2<'info> {
+    #[account(mut)]
+    pub pda_account: Account<'info, PDAAccount>,
+    #[account(init_if_needed, seeds = [b"pubkey_count_2", start_block_id.to_le_bytes().as_ref()], bump, payer = payer, space = 8 + 32 * 101)] // Adjust space as needed
+    pub count_account: Account<'info, PubkeyCountAccount>,
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
 
 #[derive(Accounts)]
 #[instruction(start_block_id: u64)]
 pub struct CountReference<'info> {
     #[account(mut)]
     pub pda_account: Account<'info, PDAAccount>,
-    #[account(init_if_needed, seeds = [b"pubkey_count", start_block_id.to_le_bytes().as_ref()], bump, payer = payer, space = 8 + 8)] // Include this line
-    pub count_account: Account<'info, CountAccount>, // Include this lin
+    #[account(init_if_needed, seeds = [b"pubkey_count", start_block_id.to_le_bytes().as_ref()], bump, payer = payer, space = 8 + 32 * 101)] // Adjust space as needed
+    pub count_account: Account<'info, PubkeyCountAccount>,
     #[account(mut)]
     pub payer: Signer<'info>,
     pub system_program: Program<'info, System>,
