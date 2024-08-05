@@ -2,6 +2,7 @@ use anchor_lang::prelude::*;
 use solana_program::program::invoke;
 use solana_program::system_instruction;
 
+
 declare_id!("7KvbAAK7kP72zcdC24vDn9L51TDV8v9he4hNJ3S7ZU51");
 
 #[program]
@@ -20,14 +21,34 @@ pub mod grow_space {
         pubkey_count_account.pubkey_counts = Vec::new();
         Ok(())
     }
+pub fn aggregate_pubkey_counts(ctx: Context<CountReference>, start_block_id: u64) -> Result<()> {
+    let (pda, _bump) = Pubkey::find_program_address(&[b"pda_account", &start_block_id.to_le_bytes()], ctx.program_id);
+    msg!("PDA Account for block ID {}: {}", start_block_id, pda);
 
-    pub fn aggregate_pubkey_counts(ctx: Context<AppendData>, start_block_id: u64) -> Result<()> {
-        
-            let (pda, _bump) = Pubkey::find_program_address(&[b"pda_account", &start_block_id.to_le_bytes()], ctx.program_id);
-            msg!("PDA Account for block ID {}: {}", start_block_id, pda);
+    let (count_pda_key, _bump) = Pubkey::find_program_address(&[b"pubkey_count", &start_block_id.to_le_bytes()], ctx.program_id);
 
-        Ok(())
+    // Load the PDA account
+    let pda_account = &ctx.accounts.pda_account;
+    let mut counter = 0;
+
+    // Iterate through block entries and their final_hashes to collect pubkeys
+    for block_entry in &pda_account.block_ids {
+        for final_hash_entry in &block_entry.final_hashes {
+            for pubkey in &final_hash_entry.pubkeys {
+                counter += 1;
+            }
+        }
     }
+
+    msg!("Unique pubkey count: {}", counter);
+
+    // Load the CountAccount associated with count_pda_key
+    let count_account = &mut ctx.accounts.count_account;
+    count_account.count = counter;
+
+    Ok(())
+}
+
 
     pub fn append_data(ctx: Context<AppendData>, block_id: u64, final_hash: String, pubkey: Pubkey) -> Result<()> {
         let pda_account = &mut ctx.accounts.pda_account;
@@ -175,6 +196,16 @@ pub struct InitializePubkeyCountAccount<'info> {
     pub payer: Signer<'info>,
     pub system_program: Program<'info, System>,
 }
+
+#[derive(Accounts)]
+pub struct PubkeyCount<'info> {
+    #[account(init_if_needed, seeds = [b"pubkey_count"], bump, payer = payer, space = 16)]
+    pub pubkey_count_account: Account<'info, CountAccount>,
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
 /*
 #[derive(Accounts)]
 #[instruction(start_block_id: u64, end_block_id: u64)]
@@ -186,7 +217,6 @@ pub struct AggregatePubkeyCounts<'info> {
     pub system_program: Program<'info, System>,
 }
 */
-
 #[derive(Accounts)]
 pub struct AppendData<'info> {
     #[account(mut)]
@@ -196,9 +226,26 @@ pub struct AppendData<'info> {
     pub system_program: Program<'info, System>,
 }
 
+
+#[derive(Accounts)]
+#[instruction(start_block_id: u64)]
+pub struct CountReference<'info> {
+    #[account(mut)]
+    pub pda_account: Account<'info, PDAAccount>,
+    #[account(init_if_needed, seeds = [b"pubkey_count", start_block_id.to_le_bytes().as_ref()], bump, payer = payer, space = 8 + 8)] // Include this line
+    pub count_account: Account<'info, CountAccount>, // Include this lin
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
 #[account]
 pub struct PubkeyCountAccount {
     pub pubkey_counts: Vec<(Pubkey, u64)>,
+}
+#[account]
+pub struct CountAccount {
+    pub count: u64,
 }
 
 #[account]
