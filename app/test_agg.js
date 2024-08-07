@@ -32,6 +32,14 @@ async function aggregatePubkeyCounts(blockId) {
   );
 
   try {
+    console.log(`Fetching voter accounting data for PDA: ${voterAccountingPda.toString()}`);
+    const voterAccounting = await program.account.voterAccounting.fetch(voterAccountingPda);
+    console.log("Fetched Voter Accounting Data:", voterAccounting);
+
+    voterAccounting.pubkeyCounts.forEach((entry, index) => {
+      console.log(`Record ${index + 1}: Pubkey = ${entry[0]}, Credit = ${entry[1]}, Debit = ${entry[2]}`);
+    });
+
     console.log(`Fetching data for block_id: ${block_id}, PDA: ${pda.toString()}`);
     const pdaAccount = await program.account.pdaAccount.fetch(pda);
     console.log("PDA Account Data:", pdaAccount);
@@ -56,12 +64,13 @@ async function aggregatePubkeyCounts(blockId) {
     const txId = await provider.sendAndConfirm(transaction);
     console.log(`Transaction sent with ID: ${txId}`);
 
-    console.log(`Fetching voter accounting data for PDA: ${voterAccountingPda.toString()}`);
-    const voterAccounting = await program.account.voterAccounting.fetch(voterAccountingPda);
-    console.log("Fetched Voter Accounting Data:", voterAccounting);
+    // Fetch the updated voter accounting data after the transaction
+    console.log(`Fetching updated voter accounting data for PDA: ${voterAccountingPda.toString()}`);
+    const updatedVoterAccounting = await program.account.voterAccounting.fetch(voterAccountingPda);
+    console.log("Updated Voter Accounting Data:", updatedVoterAccounting);
 
-    voterAccounting.pubkeyCounts.forEach((entry, index) => {
-      console.log(`Record ${index + 1}: Pubkey = ${entry[0]}, Credit = ${entry[1]}, Debit = ${entry[2]}`);
+    updatedVoterAccounting.pubkeyCounts.forEach((entry, index) => {
+      console.log(`Updated Record ${index + 1}: Pubkey = ${entry[0]}, Credit = ${entry[1]}, Debit = ${entry[2]}`);
     });
 
   } catch (err) {

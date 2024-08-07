@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
+use solana_program::program::set_return_data;
 use solana_program::program::invoke;
 use solana_program::system_instruction;
-
 
 declare_id!("7KvbAAK7kP72zcdC24vDn9L51TDV8v9he4hNJ3S7ZU51");
 
@@ -16,62 +16,61 @@ pub mod grow_space {
         Ok(())
     }
 
-pub fn aggregate_pubkey_counts(ctx: Context<PerformAccounting>, start_block_id: u64) -> Result<()> {
-    // Look back to previous block_id pda
-    let previous_block_id = start_block_id - 100;
-    let (pda, _bump) = Pubkey::find_program_address(&[b"pda_account", &previous_block_id.to_le_bytes()], ctx.program_id);
-    msg!("PDA Account for block ID {}: {}", start_block_id, pda);
+    pub fn aggregate_pubkey_counts(ctx: Context<PerformAccounting>, start_block_id: u64) -> Result<()> {
+        // Look back to previous block_id pda
+        let previous_block_id = start_block_id - 100;
+        let (pda, _bump) = Pubkey::find_program_address(&[b"pda_account", &previous_block_id.to_le_bytes()], ctx.program_id);
+        msg!("PDA Account for block ID {}: {}", start_block_id, pda);
 
-    // Load the PDA account, this is coming from client
-    let pda_account = &ctx.accounts.pda_account;
+        // Load the PDA account, this is coming from client
+        let pda_account = &ctx.accounts.pda_account;
 
-    // Ensure there is at least one BlockEntry and one FinalHashEntry in the first BlockEntry
-    let first_final_hash_entry = pda_account.block_ids.first()
-        .and_then(|block_entry| block_entry.final_hashes.first())
-        .ok_or_else(|| error!(ErrorCode::FinalHashEntryNotFound))?;
+        // Ensure there is at least one BlockEntry and one FinalHashEntry in the first BlockEntry
+        let first_final_hash_entry = pda_account.block_ids.first()
+            .and_then(|block_entry| block_entry.final_hashes.first())
+            .ok_or_else(|| error!(ErrorCode::FinalHashEntryNotFound))?;
 
-    // Convert final_hash bytes to string
-    let final_hash_str = std::str::from_utf8(&first_final_hash_entry.final_hash)
-        .map_err(|_| error!(ErrorCode::InvalidUtf8))?;
+        // Convert final_hash bytes to string
+        let final_hash_str = std::str::from_utf8(&first_final_hash_entry.final_hash)
+            .map_err(|_| error!(ErrorCode::InvalidUtf8))?;
 
-    // Display the final hash and associated pubkeys from the first BlockEntry
-    msg!("First final hash for the first block_id is {:?}", final_hash_str);
-    // msg!("Associated pubkeys: {:?}", first_final_hash_entry.pubkeys);
-    msg!("Total count: {:?}", first_final_hash_entry.count);
+        // Display the final hash and associated pubkeys from the first BlockEntry
+        msg!("First final hash for the first block_id is {:?}", final_hash_str);
+        // msg!("Associated pubkeys: {:?}", first_final_hash_entry.pubkeys);
+        msg!("Total count: {:?}", first_final_hash_entry.count);
 
-    // Collect all pubkeys from the first final_hash_entry
-    let all_pubkeys: Vec<Pubkey> = first_final_hash_entry.pubkeys.clone();
-    if all_pubkeys.len() < 3 {
-        return Err(error!(ErrorCode::InsufficientPubkeys));
-    }
+        // Collect all pubkeys from the first final_hash_entry
+        let all_pubkeys: Vec<Pubkey> = first_final_hash_entry.pubkeys.clone();
+        if all_pubkeys.len() < 3 {
+            return Err(error!(ErrorCode::InsufficientPubkeys));
+        }
 
-    // Initialize the voter_accounting reference
-    let voter_accounting = &mut ctx.accounts.voter_accounting;
+        // Initialize the voter_accounting reference
+        let voter_accounting = &mut ctx.accounts.voter_accounting;
 
-    // Select and write 3 random pubkeys manually
-    let mut index = (anchor_lang::solana_program::sysvar::clock::Clock::get().unwrap().unix_timestamp % all_pubkeys.len() as i64) as usize;
-    let mut added_count = 0;
+        // Select and write 3 random pubkeys manually
+        let mut index = (anchor_lang::solana_program::sysvar::clock::Clock::get().unwrap().unix_timestamp % all_pubkeys.len() as i64) as usize;
+        let mut added_count = 0;
 
-    for _ in 0..3 {
-        let pubkey = all_pubkeys[index];
-        msg!("Index for pubkey: {} index {}", pubkey, index);
-        
-        // Increment the index and use modulo to wrap around if necessary
-        index = (index + 1) % all_pubkeys.len();
+        for _ in 0..3 {
+            let pubkey = all_pubkeys[index];
+            msg!("Index for pubkey: {} index {}", pubkey, index);
 
-        // Write the selected pubkey with u64, u64 being 1 and 0 to VoterAccounting account if not already present
-        if !voter_accounting.pubkey_counts.iter().any(|(key, _, _)| *key == pubkey) {
-            voter_accounting.pubkey_counts.push((pubkey, 1, 0));
-            added_count += 1;
-            if added_count >= 3 {
-                break;
+            // Increment the index and use modulo to wrap around if necessary
+            index = (index + 1) % all_pubkeys.len();
+
+            // Write the selected pubkey with u64, u64 being 1 and 0 to VoterAccounting account if not already present
+            if !voter_accounting.pubkey_counts.iter().any(|(key, _, _)| *key == pubkey) {
+                voter_accounting.pubkey_counts.push((pubkey, 1, 0));
+                added_count += 1;
+                if added_count >= 3 {
+                    break;
+                }
             }
         }
+
+        Ok(())
     }
-
-    Ok(())
-}
-
 
     pub fn append_data(ctx: Context<AppendData>, block_id: u64, final_hash: String, pubkey: Pubkey) -> Result<()> {
         let pda_account = &mut ctx.accounts.pda_account;
@@ -171,6 +170,22 @@ pub fn aggregate_pubkey_counts(ctx: Context<PerformAccounting>, start_block_id: 
 
         Ok(())
     }
+
+    pub fn get_voter_accounting_chunk(ctx: Context<GetVoterAccounting>, offset: u64, limit: u64) -> Result<()> {
+        let voter_accounting = &ctx.accounts.voter_accounting;
+
+        let end = std::cmp::min(offset + limit, voter_accounting.pubkey_counts.len() as u64) as usize;
+        let chunk = &voter_accounting.pubkey_counts[offset as usize..end];
+
+        // Serialize the chunk of data
+        let data = chunk.try_to_vec().map_err(|_| error!(ErrorCode::SerializationError))?;
+
+        // Set the return data
+        set_return_data(&data);
+
+        Ok(())
+    }
+
 }
 
 fn calculate_data_size(entries: &Vec<BlockEntry>) -> usize {
@@ -210,7 +225,6 @@ pub struct InitializePDA<'info> {
     pub system_program: Program<'info, System>,
 }
 
-
 #[derive(Accounts)]
 pub struct PubkeyCount<'info> {
     #[account(init_if_needed, seeds = [b"pubkey_count"], bump, payer = payer, space = 16)]
@@ -220,17 +234,6 @@ pub struct PubkeyCount<'info> {
     pub system_program: Program<'info, System>,
 }
 
-/*
-#[derive(Accounts)]
-#[instruction(start_block_id: u64, end_block_id: u64)]
-pub struct AggregatePubkeyCounts<'info> {
-    #[account(mut)]
-    pub pda_accounts: Vec<Account<'info, PDAAccount>>,
-    #[account(mut)]
-    pub payer: Signer<'info>,
-    pub system_program: Program<'info, System>,
-}
-*/
 #[derive(Accounts)]
 pub struct AppendData<'info> {
     #[account(mut)]
@@ -241,7 +244,6 @@ pub struct AppendData<'info> {
 }
 
 #[derive(Accounts)]
-// receive corrent block_id, look back to previous block_id
 #[instruction(start_block_id: u64)]
 pub struct PerformAccounting <'info> {
     #[account(mut)]
@@ -253,9 +255,14 @@ pub struct PerformAccounting <'info> {
     pub system_program: Program<'info, System>,
 }
 
+#[derive(Accounts)]
+pub struct GetVoterAccounting<'info> {
+    pub voter_accounting: Account<'info, VoterAccounting>,
+}
+
 #[account]
 pub struct VoterAccounting {
-    // user, credit, debit 
+    // user, credit, debit
     pub pubkey_counts: Vec<(Pubkey, u64, u64)>,
 }
 
@@ -272,13 +279,15 @@ pub struct PDAAccount {
 
 #[error_code]
 pub enum ErrorCode {
-    #[msg("Block entry not found.")]
-    BlockEntryNotFound,
-    #[msg("Final hash entry not found.")]
-    FinalHashEntryNotFound,
-    #[msg("Invalid UTF-8 sequence.")]
-    InvalidUtf8,
-    #[msg("Insufficient pubkeys available.")]
-    InsufficientPubkeys,
-    // Add other error codes as needed
-}
+        #[msg("Block entry not found.")]
+        BlockEntryNotFound,
+        #[msg("Final hash entry not found.")]
+        FinalHashEntryNotFound,
+        #[msg("Invalid UTF-8 sequence.")]
+        InvalidUtf8,
+        #[msg("Insufficient pubkeys available.")]
+        InsufficientPubkeys,
+        #[msg("Serialization error.")]
+        SerializationError,
+        // Add other error codes as needed
+    }
