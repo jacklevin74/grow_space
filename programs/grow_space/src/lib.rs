@@ -16,61 +16,73 @@ pub mod grow_space {
         Ok(())
     }
 
-    pub fn aggregate_pubkey_counts(ctx: Context<PerformAccounting>, start_block_id: u64) -> Result<()> {
-        // Look back to previous block_id pda
-        let previous_block_id = start_block_id - 100;
-        let (pda, _bump) = Pubkey::find_program_address(&[b"pda_account", &previous_block_id.to_le_bytes()], ctx.program_id);
-        msg!("PDA Account for block ID {}: {}", start_block_id, pda);
+pub fn aggregate_pubkey_counts(ctx: Context<PerformAccounting>, start_block_id: u64) -> Result<()> {
+    // Look back to previous block_id pda
+    let (pda, _bump) = Pubkey::find_program_address(&[b"pda_account", &start_block_id.to_le_bytes()], ctx.program_id);
+    msg!("PDA Account for block ID {}: {}", start_block_id, pda);
 
-        // Load the PDA account, this is coming from client
-        let pda_account = &ctx.accounts.pda_account;
+    // Load the PDA account, this is coming from client
+    let pda_account = &ctx.accounts.pda_account;
 
-        // Ensure there is at least one BlockEntry and one FinalHashEntry in the first BlockEntry
-        let first_final_hash_entry = pda_account.block_ids.first()
-            .and_then(|block_entry| block_entry.final_hashes.first())
-            .ok_or_else(|| error!(ErrorCode::FinalHashEntryNotFound))?;
+    // Ensure there is at least one BlockEntry and one FinalHashEntry in the first BlockEntry
+    let first_final_hash_entry = pda_account.block_ids.first()
+        .and_then(|block_entry| block_entry.final_hashes.first())
+        .ok_or_else(|| error!(ErrorCode::FinalHashEntryNotFound))?;
 
-        // Convert final_hash bytes to string
-        let final_hash_str = std::str::from_utf8(&first_final_hash_entry.final_hash)
-            .map_err(|_| error!(ErrorCode::InvalidUtf8))?;
+    // Convert final_hash bytes to string
+    let final_hash_str = std::str::from_utf8(&first_final_hash_entry.final_hash)
+        .map_err(|_| error!(ErrorCode::InvalidUtf8))?;
 
-        // Display the final hash and associated pubkeys from the first BlockEntry
-        msg!("First final hash for the first block_id is {:?}", final_hash_str);
-        // msg!("Associated pubkeys: {:?}", first_final_hash_entry.pubkeys);
-        msg!("Total count: {:?}", first_final_hash_entry.count);
+    // Display the final hash and associated pubkeys from the first BlockEntry
+    msg!("First final hash for the first block_id is {:?}", final_hash_str);
+    msg!("Total count: {:?}", first_final_hash_entry.count);
 
-        // Collect all pubkeys from the first final_hash_entry
-        let all_pubkeys: Vec<Pubkey> = first_final_hash_entry.pubkeys.clone();
-        if all_pubkeys.len() < 3 {
-            return Err(error!(ErrorCode::InsufficientPubkeys));
-        }
-
-        // Initialize the voter_accounting reference
-        let voter_accounting = &mut ctx.accounts.voter_accounting;
-
-        // Select and write 3 random pubkeys manually
-        let mut index = (anchor_lang::solana_program::sysvar::clock::Clock::get().unwrap().unix_timestamp % all_pubkeys.len() as i64) as usize;
-        let mut added_count = 0;
-
-        for _ in 0..3 {
-            let pubkey = all_pubkeys[index];
-            msg!("Index for pubkey: {} index {}", pubkey, index);
-
-            // Increment the index and use modulo to wrap around if necessary
-            index = (index + 1) % all_pubkeys.len();
-
-            // Write the selected pubkey with u64, u64 being 1 and 0 to VoterAccounting account if not already present
-            if !voter_accounting.pubkey_counts.iter().any(|(key, _, _)| *key == pubkey) {
-                voter_accounting.pubkey_counts.push((pubkey, 1, 0));
-                added_count += 1;
-                if added_count >= 3 {
-                    break;
-                }
+    // Collect all pubkeys from the first final_hash_entry that have an inblock value less than the current start_block_id
+    // or do not exist in the voter_accounting at all
+    let all_pubkeys: Vec<Pubkey> = first_final_hash_entry.pubkeys.iter()
+        .filter_map(|&pubkey| {
+            if ctx.accounts.voter_accounting.pubkey_counts.iter().all(|count| count.user != pubkey || count.inblock < start_block_id) {
+                Some(pubkey)
+            } else {
+                None
             }
-        }
+        })
+        .collect();
 
-        Ok(())
+    if all_pubkeys.len() < 3 {
+        return Err(error!(ErrorCode::InsufficientPubkeys));
     }
+
+    // Select and write 3 random pubkeys manually
+    let mut index = (anchor_lang::solana_program::sysvar::clock::Clock::get().unwrap().unix_timestamp % all_pubkeys.len() as i64) as usize;
+
+    for _ in 0..3 {
+        let pubkey = all_pubkeys[index];
+        msg!("Index for pubkey: {} index {}", pubkey, index);
+
+        // Increment the index and use modulo to wrap around if necessary
+        index = (index + 1) % all_pubkeys.len();
+
+        // Find or create the user PDA account
+        let (_user_pda, _user_bump) = Pubkey::find_program_address(&[b"user_pda", pubkey.as_ref()], ctx.program_id);
+        let user_pda_account = &mut ctx.accounts.user_pda_account;
+
+        // Initialize or update the user PDA account
+        if user_pda_account.user == Pubkey::default() {
+            user_pda_account.user = pubkey;
+            user_pda_account.credit = 1;
+            user_pda_account.debit = 0;
+            user_pda_account.inblock = start_block_id;
+        } else if user_pda_account.inblock < start_block_id {
+            user_pda_account.credit = 1;
+            user_pda_account.debit = 0;
+            user_pda_account.inblock = start_block_id;
+        }
+    }
+
+    Ok(())
+}
+
 
     pub fn append_data(ctx: Context<AppendData>, block_id: u64, final_hash: String, pubkey: Pubkey) -> Result<()> {
         let pda_account = &mut ctx.accounts.pda_account;
@@ -202,15 +214,17 @@ fn calculate_data_size(entries: &Vec<BlockEntry>) -> usize {
     total_size
 }
 
-#[derive(Debug, AnchorSerialize, AnchorDeserialize, Clone)]
+#[derive(Debug, AnchorSerialize, AnchorDeserialize, Clone, InitSpace)]
 pub struct BlockEntry {
     pub block_id: u64,
+    #[max_len(0)]
     pub final_hashes: Vec<FinalHashEntry>,
 }
 
-#[derive(Debug, AnchorSerialize, AnchorDeserialize, Clone)]
+#[derive(Debug, AnchorSerialize, AnchorDeserialize, Clone, InitSpace)]
 pub struct FinalHashEntry {
     pub final_hash: [u8; 8],
+    #[max_len(0)]
     pub pubkeys: Vec<Pubkey>,
     pub count: u64,
 }
@@ -243,13 +257,16 @@ pub struct AppendData<'info> {
     pub system_program: Program<'info, System>,
 }
 
+
 #[derive(Accounts)]
 #[instruction(start_block_id: u64)]
-pub struct PerformAccounting <'info> {
+pub struct PerformAccounting<'info> {
     #[account(mut)]
     pub pda_account: Account<'info, PDAAccount>,
     #[account(init_if_needed, seeds = [b"accounting"], bump, payer = payer, space = 10000)] // Adjust space as needed
     pub voter_accounting: Account<'info, VoterAccounting>,
+    #[account(init_if_needed, seeds = [b"user_pda", payer.key().as_ref()], bump, payer = payer, space = 8 + 32 + 8 + 8 + 8)]
+    pub user_pda_account: Account<'info, UserPDAAccount>,
     #[account(mut)]
     pub payer: Signer<'info>,
     pub system_program: Program<'info, System>,
@@ -260,19 +277,42 @@ pub struct GetVoterAccounting<'info> {
     pub voter_accounting: Account<'info, VoterAccounting>,
 }
 
-#[account]
-pub struct VoterAccounting {
-    // user, credit, debit
-    pub pubkey_counts: Vec<(Pubkey, u64, u64)>,
+
+#[derive(Debug, AnchorSerialize, AnchorDeserialize, Clone, InitSpace)]
+pub struct Count {
+    pub user: Pubkey,
+    pub credit: u64,
+    pub debit: u64,
+    pub inblock: u64,
 }
 
 #[account]
+#[derive(InitSpace, Default)]
+pub struct VoterAccounting {
+    // user, credit, debit
+    #[max_len(0)]
+    pub pubkey_counts: Vec<Count>,
+}
+
+#[account]
+#[derive(InitSpace, Default)]
+pub struct UserPDAAccount {
+    pub user: Pubkey,
+    pub credit: u64,
+    pub debit: u64,
+    pub inblock: u64,
+}
+
+#[account]
+#[derive(InitSpace, Default)]
 pub struct CountAccount {
     pub count: u64,
 }
 
 #[account]
+#[derive(InitSpace, Default)]
 pub struct PDAAccount {
+    #[max_len(0)]
     pub block_ids: Vec<BlockEntry>,
     pub data_size: u32,
 }
@@ -291,3 +331,4 @@ pub enum ErrorCode {
         SerializationError,
         // Add other error codes as needed
     }
+

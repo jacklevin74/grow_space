@@ -32,18 +32,8 @@ async function aggregatePubkeyCounts(blockId) {
   );
 
   try {
-    console.log(`Fetching voter accounting data for PDA: ${voterAccountingPda.toString()}`);
     const voterAccounting = await program.account.voterAccounting.fetch(voterAccountingPda);
-    console.log("Fetched Voter Accounting Data:", voterAccounting);
-
-    voterAccounting.pubkeyCounts.forEach((entry, index) => {
-      console.log(`Record ${index + 1}: Pubkey = ${entry[0]}, Credit = ${entry[1]}, Debit = ${entry[2]}`);
-    });
-
-    console.log(`Fetching data for block_id: ${block_id}, PDA: ${pda.toString()}`);
     const pdaAccount = await program.account.pdaAccount.fetch(pda);
-    console.log("PDA Account Data:", pdaAccount);
-
     const transaction = new Transaction();
 
     transaction.add(
@@ -60,21 +50,21 @@ async function aggregatePubkeyCounts(blockId) {
       }).instruction()
     );
 
-    console.log(`Sending transaction for block ID: ${blockId}`);
+    console.log(`Sending transaction for block ID: ${uniqueId}`);
     const txId = await provider.sendAndConfirm(transaction);
     console.log(`Transaction sent with ID: ${txId}`);
 
     // Fetch the updated voter accounting data after the transaction
     console.log(`Fetching updated voter accounting data for PDA: ${voterAccountingPda.toString()}`);
     const updatedVoterAccounting = await program.account.voterAccounting.fetch(voterAccountingPda);
-    console.log("Updated Voter Accounting Data:", updatedVoterAccounting);
+    //console.log("Updated Voter Accounting Data:", updatedVoterAccounting);
 
     updatedVoterAccounting.pubkeyCounts.forEach((entry, index) => {
-      console.log(`Updated Record ${index + 1}: Pubkey = ${entry[0]}, Credit = ${entry[1]}, Debit = ${entry[2]}`);
+      console.log(`Updated Record ${index + 1}: Pubkey = ${entry.user.toString()}, Credit = ${entry.credit.toString()}, Debit = ${entry.debit.toString()}, inBlock = ${entry.inblock.toString()}`);
     });
 
   } catch (err) {
-    console.error(`Failed to aggregate pubkey counts for block ID: ${blockId}`, err);
+    console.error(`Failed to aggregate pubkey counts for block ID: ${uniqueId}`, err);
   }
 }
 
