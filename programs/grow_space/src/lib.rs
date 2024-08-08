@@ -99,9 +99,9 @@ pub fn aggregate_pubkey_counts(ctx: Context<PerformAccounting>, start_block_id: 
             user_account_pda.user = pubkey;
             user_account_pda.credit = 1;
             user_account_pda.debit = 0;
-            user_account_pda.inblock = block_id;
+            user_account_pda.inblock = block_id - 100;
 
-
+        // msg!("Dump user_account_pda: {} {} {} {}", user_account_pda.user, user_account_pda.credit, user_account_pda.debit, user_account_pda.inblock); 
         // Log the current data size before modification
         let current_data_before = pda_account.data_size;
         msg!("Data size before in bytes: {}", current_data_before);

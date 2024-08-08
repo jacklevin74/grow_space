@@ -41,7 +41,8 @@ app.post('/', async (req, res) => {
   try {
     // Check if the PDA already exists
     const exists = await pdaExists(pda);
-    if (!exists) {
+    const exists2 = await pdaExists(user_account_pda);
+    //if (!exists && !exists2) {
       // Initialize the PDA if it does not exist
       try {
         const tx = await program.methods.initializePda(uniqueId, pubkeyObj).accounts({
@@ -58,9 +59,9 @@ app.post('/', async (req, res) => {
       } catch (err) {
         throw new Error(`Failed to initialize PDA: ${err.message}`);
       }
-    } else {
-      console.log("PDA already initialized, proceeding to append data.");
-    }
+   // } else {
+   //   console.log("PDA already initialized, proceeding to append data.");
+   // }
 
     // Append the data
     const tx2 = await program.methods.appendData(uniqueId, final_hash, pubkeyObj).accounts({
