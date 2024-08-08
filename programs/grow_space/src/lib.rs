@@ -36,6 +36,7 @@ pub fn aggregate_pubkey_counts(ctx: Context<PerformAccounting>, start_block_id: 
     // Display the final hash and associated pubkeys from the first BlockEntry
     msg!("First final hash for the first block_id is {:?}", final_hash_str);
     msg!("Total count: {:?}", first_final_hash_entry.count);
+    /*
 
     // Collect all pubkeys from the first final_hash_entry that have an inblock value less than the current start_block_id
     // or do not exist in the voter_accounting at all
@@ -79,6 +80,7 @@ pub fn aggregate_pubkey_counts(ctx: Context<PerformAccounting>, start_block_id: 
             user_pda_account.inblock = start_block_id;
         }
     }
+    */
 
     Ok(())
 }
@@ -264,7 +266,7 @@ pub struct PerformAccounting<'info> {
     #[account(mut)]
     pub pda_account: Account<'info, PDAAccount>,
     #[account(init_if_needed, seeds = [b"accounting"], bump, payer = payer, space = 10000)] // Adjust space as needed
-    pub voter_accounting: Account<'info, VoterAccounting>,
+    pub voter_accounting: Account<'info, Count>,
     #[account(init_if_needed, seeds = [b"user_pda", payer.key().as_ref()], bump, payer = payer, space = 8 + 32 + 8 + 8 + 8)]
     pub user_pda_account: Account<'info, UserPDAAccount>,
     #[account(mut)]
@@ -278,7 +280,8 @@ pub struct GetVoterAccounting<'info> {
 }
 
 
-#[derive(Debug, AnchorSerialize, AnchorDeserialize, Clone, InitSpace)]
+#[account]
+#[derive(Debug, InitSpace)]
 pub struct Count {
     pub user: Pubkey,
     pub credit: u64,
