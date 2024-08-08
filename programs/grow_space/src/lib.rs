@@ -9,10 +9,16 @@ declare_id!("7KvbAAK7kP72zcdC24vDn9L51TDV8v9he4hNJ3S7ZU51");
 pub mod grow_space {
     use super::*;
 
-    pub fn initialize_pda(ctx: Context<InitializePDA>, _unique_id: u64) -> Result<()> {
+    pub fn initialize_pda(ctx: Context<InitializePDA>, _unique_id: u64, _pubkey: Pubkey) -> Result<()> {
         let pda_account = &mut ctx.accounts.pda_account;
+        let user_account_pda = &mut ctx.accounts.user_account_pda;
         pda_account.block_ids = Vec::new();
         pda_account.data_size = 0;
+
+        user_account_pda.credit = 0;
+        user_account_pda.debit = 0;
+        user_account_pda.inblock = 0;
+
         Ok(())
     }
 
@@ -88,6 +94,13 @@ pub fn aggregate_pubkey_counts(ctx: Context<PerformAccounting>, start_block_id: 
 
     pub fn append_data(ctx: Context<AppendData>, block_id: u64, final_hash: String, pubkey: Pubkey) -> Result<()> {
         let pda_account = &mut ctx.accounts.pda_account;
+        let user_account_pda = &mut ctx.accounts.user_account_pda;
+
+            user_account_pda.user = pubkey;
+            user_account_pda.credit = 1;
+            user_account_pda.debit = 0;
+            user_account_pda.inblock = block_id;
+
 
         // Log the current data size before modification
         let current_data_before = pda_account.data_size;
@@ -232,10 +245,12 @@ pub struct FinalHashEntry {
 }
 
 #[derive(Accounts)]
-#[instruction(unique_id: u64)]
+#[instruction(unique_id: u64, pubkey: Pubkey)]
 pub struct InitializePDA<'info> {
     #[account(init, seeds = [b"pda_account", unique_id.to_le_bytes().as_ref()], bump, payer = payer, space = 8 + 5 * (8 + 5 * (8 + 8 + 3 * 10)))]
     pub pda_account: Account<'info, PDAAccount>,
+    #[account(init, seeds = [b"user_account_pda", pubkey.as_ref()], bump, payer = payer, space = 4 * 8 + 32 )]
+    pub user_account_pda: Account<'info, UserAccountPda>,
     #[account(mut)]
     pub payer: Signer<'info>,
     pub system_program: Program<'info, System>,
@@ -255,6 +270,8 @@ pub struct AppendData<'info> {
     #[account(mut)]
     pub pda_account: Account<'info, PDAAccount>,
     #[account(mut)]
+    pub user_account_pda: Account<'info, UserAccountPda>,
+    #[account(mut)]
     pub payer: Signer<'info>,
     pub system_program: Program<'info, System>,
 }
@@ -266,7 +283,7 @@ pub struct PerformAccounting<'info> {
     #[account(mut)]
     pub pda_account: Account<'info, PDAAccount>,
     #[account(init_if_needed, seeds = [b"accounting"], bump, payer = payer, space = 10000)] // Adjust space as needed
-    pub voter_accounting: Account<'info, Count>,
+    pub voter_accounting: Account<'info, UserAccountPda>,
     #[account(init_if_needed, seeds = [b"user_pda", payer.key().as_ref()], bump, payer = payer, space = 8 + 32 + 8 + 8 + 8)]
     pub user_pda_account: Account<'info, UserPDAAccount>,
     #[account(mut)]
@@ -282,7 +299,7 @@ pub struct GetVoterAccounting<'info> {
 
 #[account]
 #[derive(Debug, InitSpace)]
-pub struct Count {
+pub struct UserAccountPda {
     pub user: Pubkey,
     pub credit: u64,
     pub debit: u64,
@@ -294,7 +311,7 @@ pub struct Count {
 pub struct VoterAccounting {
     // user, credit, debit
     #[max_len(0)]
-    pub pubkey_counts: Vec<Count>,
+    pub pubkey_counts: Vec<UserAccountPda>,
 }
 
 #[account]

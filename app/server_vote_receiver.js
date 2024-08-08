@@ -32,6 +32,11 @@ app.post('/', async (req, res) => {
     [Buffer.from("pda_account"), uniqueId.toArrayLike(Buffer, "le", 8)],
     program.programId
   );
+  
+  const [user_account_pda, user_account_pda_bump] = await PublicKey.findProgramAddress(
+    [Buffer.from("user_account_pda"), pubkeyObj.toBuffer()],
+    program.programId
+  );
 
   try {
     // Check if the PDA already exists
@@ -39,14 +44,17 @@ app.post('/', async (req, res) => {
     if (!exists) {
       // Initialize the PDA if it does not exist
       try {
-        await program.methods.initializePda(uniqueId).accounts({
+        const tx = await program.methods.initializePda(uniqueId, pubkeyObj).accounts({
             pdaAccount: pda,
+	    userAccountPda: user_account_pda,
             payer: provider.wallet.publicKey,
             systemProgram: anchor.web3.SystemProgram.programId,
           })
           .signers([provider.wallet.payer])
           .rpc();
+	console.log("Initialization transaction hash:", tx);
         console.log("Initialized PDA account public key:", pda.toString(), "with bump:", bump);
+	console.log("Initialized PDA for user:", user_account_pda.toString());
       } catch (err) {
         throw new Error(`Failed to initialize PDA: ${err.message}`);
       }
@@ -55,13 +63,15 @@ app.post('/', async (req, res) => {
     }
 
     // Append the data
-    await program.methods.appendData(uniqueId, final_hash, pubkeyObj).accounts({
+    const tx2 = await program.methods.appendData(uniqueId, final_hash, pubkeyObj).accounts({
         pdaAccount: pda,
+	userAccountPda: user_account_pda,
         payer: provider.wallet.publicKey,
         systemProgram: anchor.web3.SystemProgram.programId,
       })
       .signers([provider.wallet.payer])
       .rpc();
+    console.log("AppendData transaction hash:", tx2);
     res.status(200).json({ message: "Appended data", pda: pda.toString() });
   } catch (err) {
     res.status(500).json({ error: "Failed to append data", details: err.toString() });
