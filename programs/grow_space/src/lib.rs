@@ -11,13 +11,8 @@ pub mod grow_space {
 
     pub fn initialize_pda(ctx: Context<InitializePDA>, _unique_id: u64, _pubkey: Pubkey) -> Result<()> {
         let pda_account = &mut ctx.accounts.pda_account;
-        let user_account_pda = &mut ctx.accounts.user_account_pda;
         pda_account.block_ids = Vec::new();
         pda_account.data_size = 0;
-
-        user_account_pda.credit = 0;
-        user_account_pda.debit = 0;
-        user_account_pda.inblock = 0;
 
         Ok(())
     }
@@ -93,20 +88,63 @@ pub fn aggregate_pubkey_counts(ctx: Context<PerformAccounting>, start_block_id: 
 
 
     pub fn append_data(ctx: Context<AppendData>, block_id: u64, final_hash: String, pubkey: Pubkey) -> Result<()> {
+
         let pda_account = &mut ctx.accounts.pda_account;
         let user_account_pda = &mut ctx.accounts.user_account_pda;
+        let prev_pda_account = &ctx.accounts.prev_pda_account;
 
-            user_account_pda.user = pubkey;
+        msg!("block_id: {} for pda: {:?} ", block_id, pda_account.key());
+        
+        // Log some details about the previous PDA account for debugging
+        msg!("Previous PDA Account Block ID for pda: {:?} Length: {}", prev_pda_account.key(), prev_pda_account.block_ids.len());
+        
+        // Ensure there is at least one BlockEntry and one FinalHashEntry in the first BlockEntry
+        let first_final_hash_entry = prev_pda_account.block_ids.first()
+            .and_then(|block_entry| block_entry.final_hashes.first())
+            .ok_or_else(|| error!(ErrorCode::FinalHashEntryNotFound))?;
+
+        // Convert final_hash bytes to string
+        let final_hash_str = std::str::from_utf8(&first_final_hash_entry.final_hash)
+            .map_err(|_| error!(ErrorCode::InvalidUtf8))?;
+
+        // Display the final hash and associated pubkeys from the first BlockEntry
+        msg!("First final hash for the first block_id is {:?}", final_hash_str);
+        msg!("Total count: {:?}", first_final_hash_entry.count);
+        
+        let mut counter = 0;
+        // @leo - what we want to do here is send data to user_account_pda which has a seed of associated_pubkey
+        // currently, this function just references the PDA of the existing voter pubkey
+        // we need to reference all unique users in the previous block (block-100) and send some
+        // counters there
+
+        for &associated_pubkey in first_final_hash_entry.pubkeys.iter() {
+
+            user_account_pda.user = associated_pubkey;
             user_account_pda.credit = 1;
             user_account_pda.debit = 0;
             user_account_pda.inblock = block_id - 100;
+        msg!(
+            "Record {}: user: {:?}, credit: {}, debit: {}, inblock: {}",
+            counter + 1,
+            user_account_pda.user,
+            user_account_pda.credit,
+            user_account_pda.debit,
+            user_account_pda.inblock
+        );
 
-        // msg!("Dump user_account_pda: {} {} {} {}", user_account_pda.user, user_account_pda.credit, user_account_pda.debit, user_account_pda.inblock); 
+        // Increment the counter and break if we've processed 3 records
+        counter += 1;
+        if counter >= 3 {
+            break;
+        }
+
+        } 
+        msg!("Dump user_account_pda: {} {} {} {}", user_account_pda.user, user_account_pda.credit, user_account_pda.debit, user_account_pda.inblock); 
+
         // Log the current data size before modification
         let current_data_before = pda_account.data_size;
         msg!("Data size before in bytes: {}", current_data_before);
         msg!("Current data length allocation: {}", pda_account.to_account_info().data_len());
-        msg!("block_id: {}", block_id);
 
         // Convert the final_hash string to bytes and truncate to 64 bits (8 bytes)
         let final_hash_bytes: [u8; 8] = {
@@ -249,8 +287,6 @@ pub struct FinalHashEntry {
 pub struct InitializePDA<'info> {
     #[account(init, seeds = [b"pda_account", unique_id.to_le_bytes().as_ref()], bump, payer = payer, space = 8 + 5 * (8 + 5 * (8 + 8 + 3 * 10)))]
     pub pda_account: Account<'info, PDAAccount>,
-    #[account(init, seeds = [b"user_account_pda", pubkey.as_ref()], bump, payer = payer, space = 4 * 8 + 32 )]
-    pub user_account_pda: Account<'info, UserAccountPda>,
     #[account(mut)]
     pub payer: Signer<'info>,
     pub system_program: Program<'info, System>,
@@ -266,10 +302,13 @@ pub struct PubkeyCount<'info> {
 }
 
 #[derive(Accounts)]
+#[instruction(block_id: u64, final_hash: String, pubkey: Pubkey)]
 pub struct AppendData<'info> {
     #[account(mut)]
     pub pda_account: Account<'info, PDAAccount>,
     #[account(mut)]
+    pub prev_pda_account: Account<'info, PDAAccount>,
+    #[account(init_if_needed, seeds = [b"user_account_pda", pubkey.as_ref()], bump, payer = payer, space = 4 * 8 + 32 )]
     pub user_account_pda: Account<'info, UserAccountPda>,
     #[account(mut)]
     pub payer: Signer<'info>,
@@ -330,7 +369,7 @@ pub struct CountAccount {
 }
 
 #[account]
-#[derive(InitSpace, Default)]
+#[derive(Debug, InitSpace, Default)]
 pub struct PDAAccount {
     #[max_len(0)]
     pub block_ids: Vec<BlockEntry>,
