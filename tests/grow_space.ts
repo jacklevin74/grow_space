@@ -74,6 +74,7 @@ describe("grow_space_combined", () => {
 
         for await (const i of [0, 1, 2]) { // Limiting to 3 for testing purposes
             randomBlockId += Math.floor(Math.random() * 100_000);
+            blockIds.add(randomBlockId.toString())
             const uniqueId = new BN(randomBlockId); // Use the block ID as the unique ID
             console.log("Loop: " + i + ", Block ID: " + randomBlockId);
 
@@ -139,6 +140,7 @@ describe("grow_space_combined", () => {
             // Append unique final hashes
             for await (const k of [0, 1, 2]) { // Reduced to 3 for testing purposes
                 randomBlockId += Math.floor(Math.random() * 100_000);
+                blockIds.add(randomBlockId.toString())
                 const uniqueHash = `hash_${randomBlockId}_unique${k}`;
 
                 try {
@@ -162,14 +164,14 @@ describe("grow_space_combined", () => {
                         .rpc({commitment: "confirmed", skipPreflight: true});
 
                     console.log("  Appending Unique Final Hash:" + uniqueHash + ", sig:" + sig);
-                    blockIds.add(randomBlockId.toString());
+                    // blockIds.add(randomBlockId.toString());
 
                 } catch (err) {
                     console.error(`Failed to append data for Block ID ${randomBlockId}:`, err);
                 }
             }
 
-            blockIds.add(randomBlockId.toString());
+            // blockIds.add(randomBlockId.toString());
 
             await new Promise(resolve => setTimeout(resolve, 5_000));
             // await printPdaAccountInfo(randomBlockId.toString());

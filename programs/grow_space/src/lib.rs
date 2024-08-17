@@ -1,3 +1,5 @@
+mod bpf_writer;
+
 use anchor_lang::prelude::*;
 use solana_program::program::invoke;
 use solana_program::program::set_return_data;
@@ -206,9 +208,10 @@ pub mod grow_space {
                             // serialize voter's PDA
                             // todo: prevent self-voting
                             if voter_pda == *user_account.key {
-                                let mut buf: &[u8] = &user_account.try_borrow_mut_data()?[..];
+                                let mut buf: &mut [u8] =
+                                    &mut user_account.try_borrow_mut_data().unwrap();
                                 let mut voter_account: UserAccountPda =
-                                    UserAccountPda::try_deserialize(&mut buf)?;
+                                    UserAccountPda::try_deserialize(&mut &*buf)?;
                                 msg!(
                                     "Found voter {} inblock {} block {} writable {}",
                                     voter.key(),
@@ -221,8 +224,11 @@ pub mod grow_space {
                                     voter_account.credit += 1;
                                     voter_account.inblock = block_id;
                                     msg!("Credit: {}", voter_account.credit);
-                                    // let mut writer = BpfWriter::new(&mut buf); // notice this
-                                    // voter_account.try_serialize(&mut writer)?;
+                                    // let buf_write: &mut [u8] =
+                                    //    &mut user_account.try_borrow_mut_data().unwrap();
+                                    let mut writer: bpf_writer::BpfWriter<&mut [u8]> =
+                                        bpf_writer::BpfWriter::new(&mut *buf); // notice this
+                                    voter_account.try_serialize(&mut writer)?;
                                 }
                             }
                         }
