@@ -38,3 +38,7 @@ repeatedly attempts to invoke Program Instruction to append voting data for the 
 voters for the previous block.
 
 After the tests are complete, the script prints out stats info about block-voting PDAs and user accounting PDAs.
+
+## TODOs
+
+- make global auto-incrementing counter for BlockId
