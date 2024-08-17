@@ -104,13 +104,14 @@ pub mod grow_space {
         let user_account_pda = &mut ctx.accounts.user_account_pda;
         // let prev_pda_account = &ctx.accounts.prev_pda_account;
 
+        if user_account_pda.user == Pubkey::default() {
+            user_account_pda.user = ctx.accounts.payer.key();
+        }
+
         msg!(
-            "block_id: {} for pda: {:?} ",
+            "block_id: {} for pda: {:?} len: {}",
             block_id,
-            ctx.accounts.pda_account.key()
-        );
-        msg!(
-            "Initial data length allocation: {}",
+            ctx.accounts.pda_account.key(),
             ctx.accounts.pda_account.to_account_info().data_len()
         );
 
@@ -124,55 +125,6 @@ pub mod grow_space {
                 prev_pda_account.block_ids.len()
             );
 
-            let maybe_first_final_hash_entry = prev_pda_account
-                .block_ids
-                .first()
-                .and_then(|block_entry| block_entry.final_hashes.first());
-            // .ok_or_else(|| error!(ErrorCode::FinalHashEntryNotFound))?;
-
-            match maybe_first_final_hash_entry {
-                Some(first_final_hash_entry) => {
-                    // Convert final_hash bytes to string
-                    let final_hash_str = std::str::from_utf8(&first_final_hash_entry.final_hash)
-                        .map_err(|_| error!(ErrorCode::InvalidUtf8))?;
-
-                    // Display the final hash and associated pubkeys from the first BlockEntry
-                    msg!(
-                        "First final hash for the first block_id is {:?}",
-                        final_hash_str
-                    );
-                    msg!("Total count: {:?}", first_final_hash_entry.pubkeys.len());
-
-                    // let mut counter = 0;
-                    // @leo - what we want to do here is send data to user_account_pda which has a seed of associated_pubkey
-                    // currently, this function just references the PDA of the existing voter pubkey
-                    // we need to reference all unique users in the previous block (block-100) and send some
-                    // counters there
-
-                    for &associated_pubkey in first_final_hash_entry.pubkeys.iter() {
-                        /*
-                        user_account_pda.user = associated_pubkey;
-                        user_account_pda.credit = 1;
-                        user_account_pda.debit = 0;
-                        user_account_pda.inblock = block_id - 100;
-                        msg!(
-                            "Record {}: user: {:?}, credit: {}, debit: {}, inblock: {}",
-                            counter,
-                            user_account_pda.user,
-                            user_account_pda.credit,
-                            user_account_pda.debit,
-                            user_account_pda.inblock
-                        );
-                        counter += 1;
-                        */
-                    }
-                }
-
-                None => {
-                    msg!("Nothing to do in accounting");
-                }
-            }
-
             // for each BlockEntry of previous block
             for entry in prev_pda_account.block_ids.iter() {
                 // calculate total count of votes
@@ -184,18 +136,9 @@ pub mod grow_space {
                 // sort hashes by votes count in reverse order
                 let mut hashes_sorted = entry.final_hashes.clone();
                 hashes_sorted.sort_by_key(|h| std::cmp::Reverse(h.pubkeys.len()));
-                // msg!(
-                //    "total count: {}, #pubkeys: {}",
-                //    total_count,
-                //    hashes_sorted[0].pubkeys.len()
-                // );
+
                 // check if the highest score gets over 50% of total votes
                 if hashes_sorted[0].pubkeys.len() as u64 > total_count / 2 {
-                    // msg!(
-                    //    "#pubkeys: {}, majority: {}",
-                    //    hashes_sorted[0].pubkeys.len(),
-                    //    total_count / 2
-                    // );
                     // for each voter in the voting vector
                     for voter in hashes_sorted[0].pubkeys.iter() {
                         // find voter's PDA
@@ -206,29 +149,29 @@ pub mod grow_space {
                         // find account info
                         for user_account in ctx.remaining_accounts.iter() {
                             // serialize voter's PDA
-                            // todo: prevent self-voting
                             if voter_pda == *user_account.key {
-                                let mut buf: &mut [u8] =
+                                let buf: &mut [u8] =
                                     &mut user_account.try_borrow_mut_data().unwrap();
                                 let mut voter_account: UserAccountPda =
                                     UserAccountPda::try_deserialize(&mut &*buf)?;
-                                msg!(
-                                    "Found voter {} inblock {} block {} writable {}",
-                                    voter.key(),
-                                    voter_account.inblock,
-                                    block_id,
-                                    user_account.is_writable
-                                );
-                                // perform accounting on voter's PDA ???
-                                if voter_account.inblock < block_id {
-                                    voter_account.credit += 1;
-                                    voter_account.inblock = block_id;
-                                    msg!("Credit: {}", voter_account.credit);
-                                    // let buf_write: &mut [u8] =
-                                    //    &mut user_account.try_borrow_mut_data().unwrap();
-                                    let mut writer: bpf_writer::BpfWriter<&mut [u8]> =
-                                        bpf_writer::BpfWriter::new(&mut *buf); // notice this
-                                    voter_account.try_serialize(&mut writer)?;
+
+                                // prevent self-voting
+                                if voter_account.user != ctx.accounts.payer.key() {
+                                    // perform accounting on voter's PDA
+                                    if voter_account.inblock < block_id {
+                                        msg!(
+                                            "Eligible voter: {} in-block: {} block: {}",
+                                            voter.key(),
+                                            voter_account.inblock,
+                                            block_id,
+                                        );
+                                        voter_account.credit += 1;
+                                        voter_account.inblock = block_id;
+                                        msg!("Voter's new credit: {}", voter_account.credit);
+                                        let mut writer: bpf_writer::BpfWriter<&mut [u8]> =
+                                            bpf_writer::BpfWriter::new(&mut *buf);
+                                        voter_account.try_serialize(&mut writer)?;
+                                    }
                                 }
                             }
                         }
@@ -246,8 +189,6 @@ pub mod grow_space {
         );
 
         // Log the current data size before modification
-        // let current_data_before = ctx.accounts.pda_account.data_size;
-        // msg!("Data size before in bytes: {}", current_data_before);
         msg!(
             "Current data length allocation: {}",
             ctx.accounts.pda_account.to_account_info().data_len()
@@ -361,43 +302,6 @@ pub mod grow_space {
             "Reallocated PDA account to new size: {}",
             ctx.accounts.pda_account.to_account_info().data_len()
         );
-
-        /*
-        if current_data_after > (data_len as usize) * 90 / 100 {
-            let rent = Rent::get()?;
-            let new_size = data_len + data_len / 3; // add 30% space space
-            let lamports_needed = rent
-                .minimum_balance(new_size as usize)
-                .saturating_sub(ctx.accounts.pda_account.to_account_info().lamports());
-
-            if lamports_needed > 0 {
-                // Transfer lamports to cover the additional rent
-                invoke(
-                    &system_instruction::transfer(
-                        &ctx.accounts.payer.key(),
-                        &ctx.accounts.pda_account.to_account_info().key(),
-                        lamports_needed,
-                    ),
-                    &[
-                        ctx.accounts.payer.to_account_info(),
-                        ctx.accounts.pda_account.to_account_info(),
-                        ctx.accounts.system_program.to_account_info(),
-                    ],
-                )?;
-            }
-
-            ctx.accounts.pda_account
-                .to_account_info()
-                .realloc(new_size as usize, false)?;
-            msg!("Reallocated PDA account to new size: {}", new_size);
-        } else {
-            msg!("Reallocation of PDA account not required");
-        }
-
-         */
-
-        // Update data size in the PDA
-        // ctx.accounts.pda_account.data_size = current_data_after as u32;
 
         Ok(())
     }

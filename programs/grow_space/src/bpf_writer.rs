@@ -1,5 +1,5 @@
 use solana_program::program_memory::sol_memcpy;
-use std::io::{self, IoSlice, Write};
+use std::io::{self, Write};
 use std::{cmp, fmt};
 
 #[derive(Debug, Default)]

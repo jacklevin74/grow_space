@@ -76,7 +76,7 @@ describe("grow_space_combined", () => {
             randomBlockId += Math.floor(Math.random() * 100_000);
             blockIds.add(randomBlockId.toString())
             const uniqueId = new BN(randomBlockId); // Use the block ID as the unique ID
-            console.log("Loop: " + i + ", Block ID: " + randomBlockId);
+            console.log("\n\nLoop: " + i + ", Block ID: " + randomBlockId);
 
             let bump: number;
 
@@ -163,24 +163,20 @@ describe("grow_space_combined", () => {
                         .preInstructions([modifyComputeUnits])
                         .rpc({commitment: "confirmed", skipPreflight: true});
 
-                    console.log("  Appending Unique Final Hash:" + uniqueHash + ", sig:" + sig);
-                    // blockIds.add(randomBlockId.toString());
+                    console.log("  Appending Unique Final Hash:", uniqueHash, "payer:", keypair.publicKey.toString(), "sig:" + sig);
 
                 } catch (err) {
                     console.error(`Failed to append data for Block ID ${randomBlockId}:`, err);
                 }
             }
 
-            // blockIds.add(randomBlockId.toString());
-
             await new Promise(resolve => setTimeout(resolve, 5_000));
-            // await printPdaAccountInfo(randomBlockId.toString());
 
             prevPda = pda;
 
         }
 
-        console.log('Blocks', [...blockIds].join(", "))
+        console.log('\n\nBlocks', [...blockIds].join(", "), '\n\n');
         // Fetch the PDA and print the stored data
         for await (const blockId of [...blockIds]) {
             const uniqueId = new BN(parseInt(blockId));
@@ -206,10 +202,11 @@ describe("grow_space_combined", () => {
                     console.log(`PDA ${pda}: No blockIds`)
                 }
             } catch (e) {
-                console.log(e.message)
+                // console.log(e.message)
             }
         }
 
+        console.log('\n\n');
         for await (const keypair of keypairs) {
             const [userPda] = web3.PublicKey.findProgramAddressSync(
                 [Buffer.from("user_account_pda"), keypair.publicKey.toBytes()],
