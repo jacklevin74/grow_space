@@ -99,8 +99,6 @@ describe("grow_space_combined", () => {
                 console.error("Failed to initialize PDA:", err);
             }
 
-            // const pubkeys = Array.from({length: 30}, () => web3.Keypair.generate().publicKey);
-
             // Append repeating final hashes with repeated pubkeys
             const repeatingHashes = [`hash_${randomBlockId}_r1`, `hash_${randomBlockId}_r1`, `hash_${randomBlockId}_r1`];
             for await (const j of Array(3).fill(0).map((_, i) => i)) { // Reduced to 3 for testing purposes

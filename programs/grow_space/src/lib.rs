@@ -1,6 +1,7 @@
 mod bpf_writer;
 
 use anchor_lang::prelude::*;
+use bpf_writer::BpfWriter;
 use solana_program::program::invoke;
 use solana_program::program::set_return_data;
 use solana_program::system_instruction;
@@ -100,9 +101,8 @@ pub mod grow_space {
     }
 
     pub fn append_data(ctx: Context<AppendData>, block_id: u64, final_hash: String) -> Result<()> {
-        // let mut pda_account = &mut ctx.accounts.pda_account;
-        let user_account_pda = &mut ctx.accounts.user_account_pda;
-        // let prev_pda_account = &ctx.accounts.prev_pda_account;
+        let mut pda_account = &mut ctx.accounts.pda_account;
+        let mut user_account_pda = &mut ctx.accounts.user_account_pda;
 
         if user_account_pda.user == Pubkey::default() {
             user_account_pda.user = ctx.accounts.payer.key();
@@ -111,8 +111,8 @@ pub mod grow_space {
         msg!(
             "block_id: {} for pda: {:?} len: {}",
             block_id,
-            ctx.accounts.pda_account.key(),
-            ctx.accounts.pda_account.to_account_info().data_len()
+            pda_account.key(),
+            pda_account.to_account_info().data_len()
         );
 
         // Ensure there is at least one BlockEntry and one FinalHashEntry in the first BlockEntry
@@ -168,8 +168,7 @@ pub mod grow_space {
                                         voter_account.credit += 1;
                                         voter_account.inblock = block_id;
                                         msg!("Voter's new credit: {}", voter_account.credit);
-                                        let mut writer: bpf_writer::BpfWriter<&mut [u8]> =
-                                            bpf_writer::BpfWriter::new(&mut *buf);
+                                        let mut writer = BpfWriter::new(&mut *buf);
                                         voter_account.try_serialize(&mut writer)?;
                                     }
                                 }
@@ -191,7 +190,7 @@ pub mod grow_space {
         // Log the current data size before modification
         msg!(
             "Current data length allocation: {}",
-            ctx.accounts.pda_account.to_account_info().data_len()
+            pda_account.to_account_info().data_len()
         );
 
         // Convert the final_hash string to bytes and truncate to 64 bits (8 bytes)
@@ -213,7 +212,6 @@ pub mod grow_space {
 
         let mut found = false;
         let mut add_size: usize = 0;
-        let pda_account = &mut ctx.accounts.pda_account;
         for block_entry in &mut pda_account.block_ids {
             if block_entry.block_id == block_id {
                 found = true;
@@ -242,7 +240,7 @@ pub mod grow_space {
         }
 
         if !found {
-            ctx.accounts.pda_account.block_ids.push(BlockEntry {
+            pda_account.block_ids.push(BlockEntry {
                 block_id,
                 final_hashes: vec![FinalHashEntry {
                     final_hash: final_hash_bytes,
@@ -252,55 +250,54 @@ pub mod grow_space {
             });
             add_size += 64;
         }
-        msg!("PDA account: {:?}", ctx.accounts.pda_account.block_ids);
+        msg!("PDA account: {:?}", pda_account.block_ids);
 
         // Log the new data size after modification
-        // let current_data_after = calculate_data_size(&ctx.accounts.pda_account.block_ids);
+        // let current_data_after = calculate_data_size(&pda_account.block_ids);
         msg!(
             "New length of pda_account.entries: {}",
-            ctx.accounts.pda_account.block_ids.len()
+            pda_account.block_ids.len()
         );
         // msg!("Data size after in bytes: {}", current_data_after);
         msg!(
             "Current data length allocation: {} new: {}",
-            ctx.accounts.pda_account.to_account_info().data_len(),
+            pda_account.to_account_info().data_len(),
             add_size
         );
 
         // Check if the data size exceeds 80% of the allocated space
-        let data_len = ctx.accounts.pda_account.to_account_info().data_len();
+        let data_len = pda_account.to_account_info().data_len();
         let rent = Rent::get()?;
         let new_size = data_len + add_size; //
         let lamports_needed = rent
             .minimum_balance(new_size as usize)
-            .saturating_sub(ctx.accounts.pda_account.to_account_info().lamports());
+            .saturating_sub(pda_account.to_account_info().lamports());
 
         if lamports_needed > 0 {
             // Transfer lamports to cover the additional rent
             invoke(
                 &system_instruction::transfer(
                     &ctx.accounts.payer.key(),
-                    &ctx.accounts.pda_account.to_account_info().key(),
+                    &pda_account.to_account_info().key(),
                     lamports_needed,
                 ),
                 &[
                     ctx.accounts.payer.to_account_info(),
-                    ctx.accounts.pda_account.to_account_info(),
+                    pda_account.to_account_info(),
                     ctx.accounts.system_program.to_account_info(),
                 ],
             )
             .expect("Rent payment failed");
         }
 
-        ctx.accounts
-            .pda_account
+        pda_account
             .to_account_info()
             .realloc(new_size as usize, false)
             .expect("Reallocation failed");
 
         msg!(
             "Reallocated PDA account to new size: {}",
-            ctx.accounts.pda_account.to_account_info().data_len()
+            pda_account.to_account_info().data_len()
         );
 
         Ok(())
