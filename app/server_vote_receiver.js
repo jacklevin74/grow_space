@@ -21,10 +21,14 @@ async function pdaExists(pda) {
 // Endpoint to append data and initialize PDA if needed
 app.post('/', async (req, res) => {
   const { first_block_id, final_hash, pubkey } = req.body;
+  if (!first_block_id || !final_hash || !pubkey) {
+    return res.status(400).json({ error: "Bad request", details: "One or more of required params were not supplied" });;
+  }
   console.log(req.body);
   const block_id = first_block_id;
   console.log(block_id + " " + pubkey + "\n");
 
+  try {
   const uniqueId = new BN(block_id);
   const pubkeyObj = new PublicKey(pubkey);
 
@@ -32,6 +36,9 @@ app.post('/', async (req, res) => {
     [Buffer.from("pda_account"), uniqueId.toArrayLike(Buffer, "le", 8)],
     program.programId
   );
+  } catch (err) {
+    res.status(400).json({ error: "Bad request", details: err.toString() });
+  }
 
   try {
     // Check if the PDA already exists
